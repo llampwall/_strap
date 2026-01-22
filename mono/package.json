@@ -4,14 +4,11 @@
   "version": "0.1.0",
   "packageManager": "pnpm@9.12.3",
   "scripts": {
-    "dev": "concurrently \"pnpm --filter ./apps/server dev\" \"pnpm --filter ./apps/ui dev\"",
+    "dev": "pnpm -r --parallel dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test:server": "pnpm --filter ./apps/server test",
     "test:ui": "pnpm --filter ./apps/ui build",
     "test": "pnpm -s test:server && pnpm -s test:ui"
-  },
-  "devDependencies": {
-    "concurrently": "^9.0.1"
   }
 }

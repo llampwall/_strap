@@ -10,7 +10,13 @@ param(
   [string] $Path = "P:\\software",
 
   [Alias("skip-install")]
-  [switch] $SkipInstall
+  [switch] $SkipInstall,
+
+  [Alias("install")]
+  [switch] $Install,
+
+  [Alias("start")]
+  [switch] $Start
 )
 
 $ErrorActionPreference = "Stop"
@@ -204,24 +210,25 @@ $env:CI = "1"
 if ($SkipInstall.IsPresent) {
   Info "Skipping install (--skip-install)"
 } else {
+  $fullInstall = $Install.IsPresent -or $Start.IsPresent
   switch ($Template) {
     "node-ts-service" {
       if (Has-Command pnpm) {
-        pnpm install --lockfile-only | Out-Null
+        if ($fullInstall) { pnpm install | Out-Null } else { pnpm install --lockfile-only | Out-Null }
       } else {
         Warn "pnpm not found. install with corepack enable / npm i -g pnpm, or rerun strap with --skip-install"
       }
     }
     "node-ts-web" {
       if (Has-Command pnpm) {
-        pnpm install --lockfile-only | Out-Null
+        if ($fullInstall) { pnpm install | Out-Null } else { pnpm install --lockfile-only | Out-Null }
       } else {
         Warn "pnpm not found. install with corepack enable / npm i -g pnpm, or rerun strap with --skip-install"
       }
     }
     "mono" {
       if (Has-Command pnpm) {
-        pnpm install --lockfile-only | Out-Null
+        if ($fullInstall) { pnpm install | Out-Null } else { pnpm install --lockfile-only | Out-Null }
       } else {
         Warn "pnpm not found. install with corepack enable / npm i -g pnpm, or rerun strap with --skip-install"
       }
@@ -257,5 +264,14 @@ switch ($Template) {
   "node-ts-service" { Write-Host "  pnpm dev" }
   "node-ts-web" { Write-Host "  pnpm dev" }
   "mono" { Write-Host "  pnpm dev" }
-  "python" { Write-Host "  $RepoName --help" }
+  "python" { Write-Host "  $pyPackage --help" }
+}
+
+if (-not $SkipInstall.IsPresent -and $Start.IsPresent) {
+  switch ($Template) {
+    "node-ts-service" { pnpm dev }
+    "node-ts-web" { pnpm dev }
+    "mono" { pnpm dev }
+    "python" { python -m $pyPackage }
+  }
 }
