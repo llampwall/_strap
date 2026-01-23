@@ -1,11 +1,17 @@
-import { buildServer } from "./server";
-
-const port = Number(process.env.PORT ?? 3001);
-const host = process.env.HOST ?? "0.0.0.0";
+import { buildServer } from "./server.js";
 
 const app = buildServer();
 
-app.listen({ port, host }).catch((err) => {
-  app.log.error(err);
-  process.exit(1);
-});
+const port = Number(process.env.SERVER_PORT ?? 6969);
+const host =
+  process.env.SERVER_HOST && process.env.SERVER_HOST.trim() ? process.env.SERVER_HOST : "0.0.0.0";
+
+app
+  .listen({ port, host })
+  .then(() => {
+    app.log.info({ host, port }, "server listening");
+  })
+  .catch((err) => {
+    app.log.error(err);
+    process.exit(1);
+  });

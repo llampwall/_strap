@@ -88,7 +88,8 @@ function Get-TokenFiles($root) {
     )
     $files = & rg @args
   } else {
-    $matches = Select-String -Path (Join-Path $root "*") -Recurse -Pattern $pattern -ErrorAction SilentlyContinue
+    $matches = Get-ChildItem -LiteralPath $root -Recurse -File -Force |
+      Select-String -Pattern $pattern -ErrorAction SilentlyContinue
     $files = $matches | ForEach-Object { $_.Path } | Sort-Object -Unique
   }
 
