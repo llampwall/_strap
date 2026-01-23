@@ -16,6 +16,10 @@ param(
 
   [switch] $Start,
 
+  [switch] $Keep,
+
+  [string] $StrapRoot,
+
   [Parameter(ValueFromRemainingArguments=$true)]
   [string[]] $ExtraArgs
 )
@@ -27,8 +31,55 @@ function Info($msg) { Write-Host "➡️  $msg" }
 function Ok($msg) { Write-Host "✅ $msg" }
 function Warn($msg) { Write-Warning $msg }
 
-$TemplateRoot = Split-Path $PSScriptRoot -Parent
+function Apply-ExtraArgs {
+  param([string[]] $ArgsList)
+
+  if (-not $ArgsList) { return }
+
+  for ($i = 0; $i -lt $ArgsList.Count; $i++) {
+    $arg = $ArgsList[$i]
+    switch ($arg) {
+      "--start" { $script:Start = $true; continue }
+      "--install" { $script:Install = $true; continue }
+      "--skip-install" { $script:SkipInstall = $true; continue }
+      "--keep" { $script:Keep = $true; continue }
+      "--strap-root" { if ($i + 1 -lt $ArgsList.Count) { $script:StrapRoot = $ArgsList[$i + 1]; $i++; continue } }
+      "--template" { if ($i + 1 -lt $ArgsList.Count) { $script:Template = $ArgsList[$i + 1]; $i++; continue } }
+      "-t" { if ($i + 1 -lt $ArgsList.Count) { $script:Template = $ArgsList[$i + 1]; $i++; continue } }
+      "--path" { if ($i + 1 -lt $ArgsList.Count) { $script:Path = $ArgsList[$i + 1]; $i++; continue } }
+      "-p" { if ($i + 1 -lt $ArgsList.Count) { $script:Path = $ArgsList[$i + 1]; $i++; continue } }
+      default { }
+    }
+  }
+}
+
+Apply-ExtraArgs $ExtraArgs
+
+$TemplateRoot = if ($StrapRoot) { $StrapRoot } else { Split-Path $PSScriptRoot -Parent }
 $DefaultBranch = if ($env:BOOTSTRAP_BRANCH) { $env:BOOTSTRAP_BRANCH } else { "main" }
+
+function Show-Help {
+  @"
+strap usage:
+  strap <project-name> -t <template> [-p <parent-dir>] [--skip-install] [--install] [--start]
+  strap doctor [--strap-root <path>] [--keep]
+
+Templates:
+  node-ts-service | node-ts-web | python | mono
+
+Flags:
+  --skip-install  skip dependency install
+  --install       run full install after initial commit
+  --start         full install, then start dev
+  --keep          keep doctor artifacts
+  --strap-root    override strap repo root
+"@ | Write-Host
+}
+
+if ($RepoName -in @("--help","-h","help")) {
+  Show-Help
+  exit 0
+}
 
 function Ensure-Command($name) {
   if (-not (Get-Command $name -ErrorAction SilentlyContinue)) { Die "Missing required command: $name" }
@@ -42,7 +93,15 @@ function Copy-TemplateDir($src, $dest) {
   if (-not (Test-Path $src)) { Die "Template dir missing: $src" }
   Get-ChildItem -LiteralPath $src -Force | ForEach-Object {
     $target = Join-Path $dest $_.Name
-    Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force
+    if ($_.PSIsContainer) {
+      if (-not (Test-Path $target)) { New-Item -ItemType Directory -Path $target | Out-Null }
+      Get-ChildItem -LiteralPath $_.FullName -Force | ForEach-Object {
+        $childTarget = Join-Path $target $_.Name
+        Copy-Item -LiteralPath $_.FullName -Destination $childTarget -Recurse -Force
+      }
+    } else {
+      Copy-Item -LiteralPath $_.FullName -Destination $target -Force
+    }
   }
 }
 
@@ -52,8 +111,20 @@ function Is-ProbablyTextFile($path) {
   return -not ($binary -contains $ext)
 }
 
+function Normalize-TextFiles($root) {
+  Get-ChildItem -LiteralPath $root -Recurse -File | ForEach-Object {
+    $p = $_.FullName
+    if (-not (Is-ProbablyTextFile $p)) { return }
+
+    $content = Get-Content -LiteralPath $p -Raw
+    if ($null -eq $content) { $content = "" }
+    $content = $content -replace "`r`n", "`n"
+    [System.IO.File]::WriteAllText($p, $content, (New-Object System.Text.UTF8Encoding($false)))
+  }
+}
+
 function Replace-Tokens($root, $tokens) {
-  Get-ChildItem -LiteralPath $root -Recurse -File -Force | ForEach-Object {
+  Get-ChildItem -LiteralPath $root -Recurse -File | ForEach-Object {
     $p = $_.FullName
     if (-not (Is-ProbablyTextFile $p)) { return }
 
@@ -62,60 +133,60 @@ function Replace-Tokens($root, $tokens) {
     foreach ($k in $tokens.Keys) {
       $content = $content.Replace($k, $tokens[$k])
     }
-    # Normalize to LF and write UTF-8 without BOM
     $content = $content -replace "`r`n", "`n"
     [System.IO.File]::WriteAllText($p, $content, (New-Object System.Text.UTF8Encoding($false)))
   }
 }
 
-function Get-TokenFiles($root) {
+function Get-TokenMatches($root) {
   $pattern = "\{\{REPO_NAME\}\}|\{\{PY_PACKAGE\}\}|<REPO_NAME>|<PY_PACKAGE>"
-  $files = @()
+  $ignoreGlobs = @(
+    "!**/.git/**",
+    "!**/node_modules/**",
+    "!**/dist/**",
+    "!**/build/**",
+    "!**/coverage/**",
+    "!**/.venv/**",
+    "!**/__pycache__/**",
+    "!**/.turbo/**",
+    "!**/.vite/**",
+    "!**/.pnpm-store/**"
+  )
+
+  $results = @()
 
   if (Has-Command rg) {
-    $args = @(
-      "-l",
-      "--glob", "!**/.git/**",
-      "--glob", "!**/node_modules/**",
-      "--glob", "!**/dist/**",
-      "--glob", "!**/build/**",
-      "--glob", "!**/coverage/**",
-      "--glob", "!**/.venv/**",
-      "--glob", "!**/__pycache__/**",
-      $pattern,
-      $root
-    )
-    $files = & rg @args
-  } else {
-    $matches = Get-ChildItem -LiteralPath $root -Recurse -File |
-      Where-Object {
-        $_.FullName -notmatch "[\\/]\.git[\\/]" -and
-        $_.FullName -notmatch "[\\/]node_modules[\\/]" -and
-        $_.FullName -notmatch "[\\/]dist[\\/]" -and
-        $_.FullName -notmatch "[\\/]build[\\/]" -and
-        $_.FullName -notmatch "[\\/]coverage[\\/]" -and
-        $_.FullName -notmatch "[\\/]\.venv[\\/]" -and
-        $_.FullName -notmatch "[\\/]__pycache__[\\/]"
-      } |
-      Select-String -Pattern $pattern -ErrorAction SilentlyContinue
-    $files = $matches | ForEach-Object { $_.Path } | Sort-Object -Unique
-  }
-
-  $files = $files | Where-Object { $_ -notmatch "[\\/]\.git[\\/]" }
-  return $files
-}
-
-function Replace-Tokens-InFiles($files, $tokens) {
-  if (-not $files) { return }
-  foreach ($file in $files) {
-    $content = Get-Content -LiteralPath $file -Raw
-    if ($null -eq $content) { $content = "" }
-    foreach ($k in $tokens.Keys) {
-      $content = $content.Replace($k, $tokens[$k])
+    $args = @("-n","-o") + ($ignoreGlobs | ForEach-Object { @("--glob", $_) }) + @($pattern, $root)
+    $lines = & rg @args
+    foreach ($line in $lines) {
+      if ($line -match "^(.*?):(\\d+):(.*)$") {
+        $results += [pscustomobject]@{ Path = $matches[1]; Line = [int]$matches[2]; Match = $matches[3] }
+      }
     }
-    $content = $content -replace "`r`n", "`n"
-    [System.IO.File]::WriteAllText($file, $content, (New-Object System.Text.UTF8Encoding($false)))
+  } else {
+    $files = Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object {
+      $_.FullName -notmatch "[\\/]\.git[\\/]" -and
+      $_.FullName -notmatch "[\\/]node_modules[\\/]" -and
+      $_.FullName -notmatch "[\\/]dist[\\/]" -and
+      $_.FullName -notmatch "[\\/]build[\\/]" -and
+      $_.FullName -notmatch "[\\/]coverage[\\/]" -and
+      $_.FullName -notmatch "[\\/]\.venv[\\/]" -and
+      $_.FullName -notmatch "[\\/]__pycache__[\\/]" -and
+      $_.FullName -notmatch "[\\/]\.turbo[\\/]" -and
+      $_.FullName -notmatch "[\\/]\.vite[\\/]" -and
+      $_.FullName -notmatch "[\\/]\.pnpm-store[\\/]"
+    }
+    foreach ($file in $files) {
+      $matches = Select-String -LiteralPath $file.FullName -Pattern $pattern -AllMatches -ErrorAction SilentlyContinue
+      foreach ($m in $matches) {
+        foreach ($one in $m.Matches) {
+          $results += [pscustomobject]@{ Path = $m.Path; Line = $m.LineNumber; Match = $one.Value }
+        }
+      }
+    }
   }
+
+  $results | Where-Object { $_.Path -notmatch "[\\/]\.git[\\/]" }
 }
 
 function Replace-TokenNames($root, $tokens) {
@@ -135,29 +206,16 @@ function Replace-TokenNames($root, $tokens) {
   }
 }
 
-function Get-TokenNamePaths($root) {
-  $pattern = "\{\{REPO_NAME\}\}|\{\{PY_PACKAGE\}\}|<REPO_NAME>|<PY_PACKAGE>"
-  $entries = Get-ChildItem -LiteralPath $root -Recurse -Force
-  return $entries | Where-Object { $_.Name -match $pattern } | ForEach-Object { $_.FullName }
-}
-
 function Resolve-RemainingTokens($root, $tokens) {
   Replace-Tokens $root $tokens
   Replace-TokenNames $root $tokens
+  Normalize-TextFiles $root
 
-  $remaining = Get-TokenFiles $root
-  if ($remaining) {
-    Replace-Tokens-InFiles $remaining $tokens
-  }
-  $remaining = Get-TokenFiles $root
-  $remainingNames = Get-TokenNamePaths $root
-  $allRemaining = @()
-  if ($remaining) { $allRemaining += $remaining }
-  if ($remainingNames) { $allRemaining += $remainingNames }
-  $allRemaining = $allRemaining | Sort-Object -Unique
-  if ($allRemaining -and $allRemaining.Count -gt 0) {
-    Warn "Unresolved template tokens remain in:"
-    $allRemaining | ForEach-Object { Warn "  $_" }
+  $matches = Get-TokenMatches $root
+  if ($matches -and $matches.Count -gt 0) {
+    Warn "Unresolved template tokens remain:"
+    $matches | ForEach-Object { Warn ("  {0}:{1} -> {2}" -f $_.Path, $_.Line, $_.Match) }
+    exit 1
   }
 }
 
@@ -178,27 +236,184 @@ function Prompt-Template() {
   }
 }
 
-function Apply-ExtraArgs {
-  param([string[]] $ArgsList)
+function Stop-ProcessTree($processId) {
+  $children = Get-CimInstance Win32_Process | Where-Object { $_.ParentProcessId -eq $processId }
+  foreach ($child in $children) {
+    Stop-ProcessTree $child.ProcessId
+  }
+  try { Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue } catch { }
+}
 
-  if (-not $ArgsList) { return }
+function Wait-For-Health($port) {
+  $deadline = (Get-Date).AddSeconds(10)
+  while ((Get-Date) -lt $deadline) {
+    try {
+      $resp = Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 -Uri ("http://127.0.0.1:{0}/health" -f $port)
+      if ($resp.StatusCode -eq 200) { return $true }
+    } catch { }
+    Start-Sleep -Milliseconds 500
+  }
+  return $false
+}
 
-  for ($i = 0; $i -lt $ArgsList.Count; $i++) {
-    $arg = $ArgsList[$i]
-    switch ($arg) {
-      "--start" { $script:Start = $true; continue }
-      "--install" { $script:Install = $true; continue }
-      "--skip-install" { $script:SkipInstall = $true; continue }
-      "--template" { if ($i + 1 -lt $ArgsList.Count) { $script:Template = $ArgsList[$i + 1]; $i++; continue } }
-      "-t" { if ($i + 1 -lt $ArgsList.Count) { $script:Template = $ArgsList[$i + 1]; $i++; continue } }
-      "--path" { if ($i + 1 -lt $ArgsList.Count) { $script:Path = $ArgsList[$i + 1]; $i++; continue } }
-      "-p" { if ($i + 1 -lt $ArgsList.Count) { $script:Path = $ArgsList[$i + 1]; $i++; continue } }
-      default { }
+function Get-FreePort($preferred) {
+  $port = $preferred
+  for ($i = 0; $i -lt 20; $i++) {
+    try {
+      $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
+      $listener.Start()
+      $listener.Stop()
+      return $port
+    } catch {
+      $port = $port + 1
     }
+  }
+  return $preferred
+}
+
+function Read-EnvDefaults($path) {
+  $vars = @{}
+  if (-not (Test-Path $path)) { return $vars }
+  Get-Content -LiteralPath $path | ForEach-Object {
+    $line = $_.Trim()
+    if (-not $line -or $line.StartsWith("#")) { return }
+    $parts = $line.Split("=", 2)
+    if ($parts.Count -eq 2) {
+      $vars[$parts[0].Trim()] = $parts[1].Trim()
+    }
+  }
+  return $vars
+}
+
+function Invoke-Doctor {
+  param(
+    [string] $RootPath,
+    [switch] $KeepArtifacts
+  )
+
+  $psExe = if (Has-Command pwsh) { "pwsh" } else { "powershell" }
+  $doctorBase = Join-Path $RootPath "_doctor"
+  $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+  $runRoot = Join-Path $doctorBase $stamp
+  New-Item -ItemType Directory -Path $runRoot -Force | Out-Null
+
+  $templates = @(
+    @{ Name = "node-ts-service"; Repo = "doctor-svc" },
+    @{ Name = "node-ts-web"; Repo = "doctor-web" },
+    @{ Name = "python"; Repo = "doctor-py" },
+    @{ Name = "mono"; Repo = "doctor-mono" }
+  )
+
+  $results = @()
+
+  try {
+    foreach ($t in $templates) {
+      $repoPath = Join-Path $runRoot $t.Repo
+      $createArgs = @(
+        "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
+        "-File", $PSCommandPath,
+        $t.Repo,
+        "-Template", $t.Name,
+        "-Path", $runRoot,
+        "-SkipInstall"
+      )
+
+      & $psExe @createArgs | Out-Null
+      $createOk = ($LASTEXITCODE -eq 0) -and (Test-Path $repoPath)
+
+      $tokenOk = $false
+      if ($createOk) {
+        $matches = Get-TokenMatches $repoPath
+        $tokenOk = (-not $matches -or $matches.Count -eq 0)
+        if (-not $tokenOk) {
+          Warn "Doctor: unresolved tokens in $repoPath"
+          $matches | ForEach-Object { Warn ("  {0}:{1} -> {2}" -f $_.Path, $_.Line, $_.Match) }
+        }
+      }
+
+      $testOk = $false
+      if ($createOk -and $tokenOk) {
+        switch ($t.Name) {
+          "node-ts-service" {
+            & $psExe -NoLogo -NoProfile -Command "Set-Location '$repoPath'; pnpm install --prefer-offline; pnpm -s test" | Out-Null
+            $testOk = ($LASTEXITCODE -eq 0)
+
+            if ($testOk) {
+              $envFile = Join-Path $repoPath ".env.example"
+              $vars = Read-EnvDefaults $envFile
+              $port = [int]($vars["SERVER_PORT"] | ForEach-Object { $_ })
+              if (-not $port) { $port = 6969 }
+
+              $portToUse = Get-FreePort $port
+              if ($portToUse -ne $port) { Warn "Doctor: port $port in use, using $portToUse" }
+              $cmd = "set SERVER_HOST=0.0.0.0&& set SERVER_PORT=$portToUse&& node dist\src\index.js"
+              $proc = Start-Process -FilePath "cmd.exe" -ArgumentList @('/c', $cmd) -WorkingDirectory $repoPath -PassThru
+              $ok = Wait-For-Health $portToUse
+              Stop-ProcessTree $proc.Id
+              if (-not $ok) { $testOk = $false }
+            }
+          }
+          "node-ts-web" {
+            & $psExe -NoLogo -NoProfile -Command "Set-Location '$repoPath'; pnpm install --prefer-offline; pnpm -s build" | Out-Null
+            $testOk = ($LASTEXITCODE -eq 0)
+          }
+          "python" {
+            & $psExe -NoLogo -NoProfile -Command "Set-Location '$repoPath'; python -m pip install -e . pytest; python -m pytest" | Out-Null
+            $testOk = ($LASTEXITCODE -eq 0)
+          }
+          "mono" {
+            & $psExe -NoLogo -NoProfile -Command "Set-Location '$repoPath'; pnpm install --prefer-offline; pnpm -s -w test" | Out-Null
+            $testOk = ($LASTEXITCODE -eq 0)
+
+            if ($testOk) {
+              $envFile = Join-Path $repoPath ".env.example"
+              $vars = Read-EnvDefaults $envFile
+              $port = [int]($vars["SERVER_PORT"] | ForEach-Object { $_ })
+              if (-not $port) { $port = 6969 }
+
+              $portToUse = Get-FreePort $port
+              if ($portToUse -ne $port) { Warn "Doctor: port $port in use, using $portToUse" }
+              $cmd = "set SERVER_HOST=0.0.0.0&& set SERVER_PORT=$portToUse&& node dist\src\index.js"
+              $proc = Start-Process -FilePath "cmd.exe" -ArgumentList @('/c', $cmd) -WorkingDirectory (Join-Path $repoPath "apps\server") -PassThru
+              $ok = Wait-For-Health $portToUse
+              Stop-ProcessTree $proc.Id
+              if (-not $ok) { $testOk = $false }
+            }
+          }
+        }
+      }
+
+      $results += [pscustomobject]@{
+        Template = $t.Name
+        Created = $createOk
+        Tokens  = $tokenOk
+        Tests   = $testOk
+      }
+    }
+  } finally {
+    if (-not $KeepArtifacts) {
+      Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $runRoot
+    } else {
+      Info "Doctor artifacts kept at $runRoot"
+    }
+  }
+
+  Write-Host ""
+  Write-Host "strap doctor summary:"
+  foreach ($r in $results) {
+    $status = if ($r.Created -and $r.Tokens -and $r.Tests) { "PASS" } else { "FAIL" }
+    Write-Host ("  {0,-14} {1}" -f $r.Template, $status)
+  }
+
+  if ($results | Where-Object { -not ($_.Created -and $_.Tokens -and $_.Tests) }) {
+    exit 1
   }
 }
 
-Apply-ExtraArgs $ExtraArgs
+if ($RepoName -eq "doctor") {
+  Invoke-Doctor -RootPath $TemplateRoot -KeepArtifacts:$Keep.IsPresent
+  exit 0
+}
 
 if (-not $Template) { $Template = Prompt-Template }
 
@@ -230,8 +445,8 @@ $tokens = @{
   "<PY_PACKAGE>" = $pyPackage
   "{{YEAR}}"      = "$year"
 }
-Replace-Tokens $Dest $tokens
-Replace-TokenNames $Dest $tokens
+
+Resolve-RemainingTokens $Dest $tokens
 
 if ($Template -eq "python") {
   $legacyPath = Join-Path $Dest $RepoName
@@ -249,7 +464,7 @@ if (-not (Test-Path $envExample)) {
   Set-Content -LiteralPath $envExample -NoNewline -Value "# Example environment variables`n# FOO=bar`n"
 }
 
-Get-ChildItem -LiteralPath $Dest -Recurse -Force -File -Filter ".keep" | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem -LiteralPath $Dest -Recurse -File -Filter ".keep" | Remove-Item -Force -ErrorAction SilentlyContinue
 
 Ensure-Command git
 Push-Location $Dest
@@ -307,7 +522,7 @@ if (Test-Path $ContextHookCmd) {
   Die "context-hook not found in build/"
 }
 
-Resolve-RemainingTokens $Dest $tokens
+Normalize-TextFiles $Dest
 
 git add . | Out-Null
 git commit -m "chore: init repo from $Template template" 2>$null | Out-Null

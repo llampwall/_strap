@@ -16,6 +16,10 @@ if /I "%~1"=="--skip-install" (
   set "ARGS=!ARGS! -Start"
 ) else if /I "%~1"=="-Start" (
   set "ARGS=!ARGS! -Start"
+) else if /I "%~1"=="--keep" (
+  set "ARGS=!ARGS! -Keep"
+) else if /I "%~1"=="--strap-root" (
+  set "ARGS=!ARGS! -StrapRoot"
 ) else if /I "%~1"=="--template" (
   set "ARGS=!ARGS! -Template"
 ) else if /I "%~1"=="-t" (

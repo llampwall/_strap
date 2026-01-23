@@ -1,7 +1,16 @@
+import { resolve } from "node:path";
+import dotenv from "dotenv";
 import { buildServer } from "./server";
 
-const port = Number(process.env.PORT ?? 3000);
-const host = process.env.HOST ?? "0.0.0.0";
+dotenv.config({ path: resolve(process.cwd(), ".env") });
+
+const port = Number(process.env.SERVER_PORT ?? process.env.PORT ?? 6969);
+const host =
+  process.env.SERVER_HOST && process.env.SERVER_HOST.trim()
+    ? process.env.SERVER_HOST
+    : process.env.HOST && process.env.HOST.trim()
+      ? process.env.HOST
+      : "0.0.0.0";
 
 const app = buildServer();
 

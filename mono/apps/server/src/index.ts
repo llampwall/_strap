@@ -1,4 +1,8 @@
+import { resolve } from "node:path";
+import dotenv from "dotenv";
 import { buildServer } from "./server.js";
+
+dotenv.config({ path: resolve(process.cwd(), "..", "..", ".env") });
 
 const app = buildServer();
 

@@ -1,12 +1,15 @@
-import { describe, expect, it } from "vitest";
+import assert from "node:assert/strict";
 import { buildServer } from "../src/server";
 
-describe("smoke", () => {
-  it("responds on /health", async () => {
-    const app = buildServer();
-    const res = await app.inject({ method: "GET", url: "/health" });
+const run = async () => {
+  const app = buildServer();
+  const res = await app.inject({ method: "GET", url: "/health" });
 
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ ok: true });
-  });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.json(), { ok: true });
+};
+
+run().catch((err) => {
+  console.error(err);
+  process.exit(1);
 });

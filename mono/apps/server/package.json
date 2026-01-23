@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js",
+    "start": "node dist/src/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "tsc -p tsconfig.json && node dist/test/smoke.test.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

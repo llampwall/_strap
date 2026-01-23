@@ -1,8 +1,4 @@
-import { resolve } from "node:path";
-import dotenv from "dotenv";
 import Fastify from "fastify";
-
-dotenv.config({ path: resolve(process.cwd(), "..", "..", ".env") });
 
 export const buildServer = () => {
   const app = Fastify({
