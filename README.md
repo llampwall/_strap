@@ -1,6 +1,6 @@
 # strap
 
-Repo bootstrapper for common project templates. `strap` copies a shared `common/` baseline plus a template, replaces tokens, initializes git, optionally installs deps, runs `context-hook`, and makes the first commit.
+Repo bootstrapper for common project templates. `strap` copies a shared `templates/common/` baseline plus a template, replaces tokens, initializes git, optionally installs deps, runs `context-hook`, and makes the first commit.
 
 ## Templates
 
@@ -80,7 +80,7 @@ strap templatize my-template --source C:\Code\SomeRepo
 
 1. Creates the repo folder in the parent dir
 2. Initializes git and creates the default branch
-3. Copies `common/` and the selected template
+3. Copies `templates/common/` and the selected template
 4. Replaces tokens (`{{REPO_NAME}}`, `{{PY_PACKAGE}}`, `<REPO_NAME>`, `<PY_PACKAGE>`) in file contents and names
 5. Ensures `.env.example` exists
 6. Installs deps:
@@ -95,7 +95,7 @@ strap templatize my-template --source C:\Code\SomeRepo
 `strap doctor` creates a temporary root inside `_strap/_doctor/<timestamp>`, boots each template with `--skip-install`, then installs and runs a deterministic smoke matrix sequentially:
 ## Templatize
 
-`strap templatize` snapshots an existing repo into a new template folder under `_strap/` (next to `mono/`, `python/`, etc.). It does a filtered copy only (no tokenization), stages just the destination folder, and creates a commit in the strap repo.
+`strap templatize` snapshots an existing repo into a new template folder under `_strap/templates/` (next to `templates/mono/`, `templates/python/`, etc.). It does a filtered copy only (no tokenization), stages just the destination folder, and creates a commit in the strap repo.
 
 Defaults:
 - Uses the current working directory's git root as the source (or `--source`).
@@ -160,10 +160,10 @@ Vite configs are set to `allowedHosts: true` to allow access from other hosts.
 ## Repo Layout
 
 ```
-common/           # shared baseline files
-node-ts-service/  # service template
-node-ts-web/      # web template
-python/           # python template
-mono/             # monorepo template
-build/            # bootstrap scripts + context-hook
+templates/common/           # shared baseline files
+templates/node-ts-service/  # service template
+templates/node-ts-web/      # web template
+templates/python/           # python template
+templates/mono/             # monorepo template
+build/                      # bootstrap scripts + context-hook
 ```

@@ -394,7 +394,7 @@ function Invoke-Templatize {
     Die "strap repo is dirty; commit/stash or use --allow-dirty"
   }
 
-  $dest = Join-Path $strapRoot $TemplateName
+  $dest = Join-Path $strapRoot (Join-Path "templates" $TemplateName)
   if (Test-Path $dest) {
     if (-not $ForceTemplate) { Die "Template already exists: $dest (use --force to overwrite)" }
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $dest
@@ -565,7 +565,7 @@ if ($RepoName -eq "doctor") {
 
 if (-not $Template) { $Template = Prompt-Template }
 
-$ProfileDir = $Template
+$ProfileDir = Join-Path "templates" $Template
 
 if (-not (Test-Path $Path)) {
   New-Item -ItemType Directory -Path $Path | Out-Null
@@ -577,7 +577,7 @@ if (Test-Path $Dest) { Die "Path exists: $Dest" }
 Info "Creating repo: $RepoName ($Template)"
 New-Item -ItemType Directory -Path $Dest | Out-Null
 
-$CommonDir = Join-Path $TemplateRoot "common"
+$CommonDir = Join-Path $TemplateRoot "templates\common"
 $ProfilePath = Join-Path $TemplateRoot $ProfileDir
 
 Info "Copying templates from $TemplateRoot"
