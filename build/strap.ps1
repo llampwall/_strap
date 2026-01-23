@@ -62,7 +62,9 @@ function Replace-Tokens($root, $tokens) {
     foreach ($k in $tokens.Keys) {
       $content = $content.Replace($k, $tokens[$k])
     }
-    Set-Content -LiteralPath $p -NoNewline -Value $content
+    # Normalize to LF and write UTF-8 without BOM
+    $content = $content -replace "`r`n", "`n"
+    [System.IO.File]::WriteAllText($p, $content, (New-Object System.Text.UTF8Encoding($false)))
   }
 }
 
@@ -230,6 +232,10 @@ git checkout -b $DefaultBranch 2>$null | Out-Null
 Ok "git initialized ($DefaultBranch)"
 
 $env:CI = "1"
+if ($Start.IsPresent -and $SkipInstall.IsPresent) {
+  Warn "Both --start and --skip-install were provided; skipping --start."
+  $Start = $false
+}
 if ($SkipInstall.IsPresent) {
   Info "Skipping install (--skip-install)"
 } else {
@@ -277,9 +283,18 @@ Resolve-RemainingTokens $Dest $tokens
 
 git add . | Out-Null
 git commit -m "chore: init repo from $Template template" 2>$null | Out-Null
-Pop-Location
 Ok "initial commit created"
 
+if (-not $SkipInstall.IsPresent -and $Start.IsPresent) {
+  switch ($Template) {
+    "node-ts-service" { if (Has-Command pnpm) { pnpm dev } }
+    "node-ts-web" { if (Has-Command pnpm) { pnpm dev } }
+    "mono" { if (Has-Command pnpm) { pnpm dev } }
+    "python" { python -m $pyPackage }
+  }
+}
+
+Pop-Location
 Ok "Done."
 Write-Host "Next:"
 Write-Host "  cd $Dest"
@@ -288,13 +303,4 @@ switch ($Template) {
   "node-ts-web" { Write-Host "  pnpm dev" }
   "mono" { Write-Host "  pnpm dev" }
   "python" { Write-Host "  $pyPackage --help" }
-}
-
-if (-not $SkipInstall.IsPresent -and $Start.IsPresent) {
-  switch ($Template) {
-    "node-ts-service" { pnpm dev }
-    "node-ts-web" { pnpm dev }
-    "mono" { pnpm dev }
-    "python" { python -m $pyPackage }
-  }
 }
