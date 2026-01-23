@@ -4,6 +4,14 @@ Thumbs.db
 .vscode/
 .idea/
 
+# node / pnpm
+node_modules/
+.pnpm-store/
+.pnpm/
+
+# python
+.venv/
+
 # env
 .env
 .env.*

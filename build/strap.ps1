@@ -236,28 +236,29 @@ if ($Start.IsPresent -and $SkipInstall.IsPresent) {
   Warn "Both --start and --skip-install were provided; skipping --start."
   $Start = $false
 }
+
+$fullInstall = $Install.IsPresent -or $Start.IsPresent
 if ($SkipInstall.IsPresent) {
   Info "Skipping install (--skip-install)"
 } else {
-  $fullInstall = $Install.IsPresent -or $Start.IsPresent
   switch ($Template) {
     "node-ts-service" {
       if (Has-Command pnpm) {
-        if ($fullInstall) { pnpm install | Out-Null } else { pnpm install --lockfile-only | Out-Null }
+        pnpm install --lockfile-only | Out-Null
       } else {
         Warn "pnpm not found. install with corepack enable / npm i -g pnpm, or rerun strap with --skip-install"
       }
     }
     "node-ts-web" {
       if (Has-Command pnpm) {
-        if ($fullInstall) { pnpm install | Out-Null } else { pnpm install --lockfile-only | Out-Null }
+        pnpm install --lockfile-only | Out-Null
       } else {
         Warn "pnpm not found. install with corepack enable / npm i -g pnpm, or rerun strap with --skip-install"
       }
     }
     "mono" {
       if (Has-Command pnpm) {
-        if ($fullInstall) { pnpm install | Out-Null } else { pnpm install --lockfile-only | Out-Null }
+        pnpm install --lockfile-only | Out-Null
       } else {
         Warn "pnpm not found. install with corepack enable / npm i -g pnpm, or rerun strap with --skip-install"
       }
@@ -284,6 +285,15 @@ Resolve-RemainingTokens $Dest $tokens
 git add . | Out-Null
 git commit -m "chore: init repo from $Template template" 2>$null | Out-Null
 Ok "initial commit created"
+
+if (-not $SkipInstall.IsPresent -and $fullInstall) {
+  switch ($Template) {
+    "node-ts-service" { if (Has-Command pnpm) { pnpm install | Out-Null } }
+    "node-ts-web" { if (Has-Command pnpm) { pnpm install | Out-Null } }
+    "mono" { if (Has-Command pnpm) { pnpm install | Out-Null } }
+    "python" { }
+  }
+}
 
 if (-not $SkipInstall.IsPresent -and $Start.IsPresent) {
   switch ($Template) {
