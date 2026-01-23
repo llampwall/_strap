@@ -12,11 +12,12 @@ param(
   [Alias("skip-install")]
   [switch] $SkipInstall,
 
-  [Alias("install")]
   [switch] $Install,
 
-  [Alias("start")]
-  [switch] $Start
+  [switch] $Start,
+
+  [Parameter(ValueFromRemainingArguments=$true)]
+  [string[]] $ExtraArgs
 )
 
 $ErrorActionPreference = "Stop"
@@ -147,6 +148,28 @@ function Prompt-Template() {
     default { Die "Invalid choice" }
   }
 }
+
+function Apply-ExtraArgs {
+  param([string[]] $ArgsList)
+
+  if (-not $ArgsList) { return }
+
+  for ($i = 0; $i -lt $ArgsList.Count; $i++) {
+    $arg = $ArgsList[$i]
+    switch ($arg) {
+      "--start" { $script:Start = $true; continue }
+      "--install" { $script:Install = $true; continue }
+      "--skip-install" { $script:SkipInstall = $true; continue }
+      "--template" { if ($i + 1 -lt $ArgsList.Count) { $script:Template = $ArgsList[$i + 1]; $i++; continue } }
+      "-t" { if ($i + 1 -lt $ArgsList.Count) { $script:Template = $ArgsList[$i + 1]; $i++; continue } }
+      "--path" { if ($i + 1 -lt $ArgsList.Count) { $script:Path = $ArgsList[$i + 1]; $i++; continue } }
+      "-p" { if ($i + 1 -lt $ArgsList.Count) { $script:Path = $ArgsList[$i + 1]; $i++; continue } }
+      default { }
+    }
+  }
+}
+
+Apply-ExtraArgs $ExtraArgs
 
 if (-not $Template) { $Template = Prompt-Template }
 
