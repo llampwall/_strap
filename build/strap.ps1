@@ -673,7 +673,7 @@ if (Test-Path $ContextHookCmd) {
 Normalize-TextFiles $Dest
 
 git add . | Out-Null
-git commit -m "chore: init repo from $Template template" 2>$null | Out-Null
+git commit -m "init repo from $Template template" 2>$null | Out-Null
 Ok "initial commit created"
 
 if (-not $SkipInstall.IsPresent -and $fullInstall) {

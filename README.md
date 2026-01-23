@@ -87,7 +87,7 @@ strap templatize my-template --source C:\Code\SomeRepo
    - default: lockfile-only (node/mono)
    - `--install` / `--start`: full install (real dependencies)
 7. Runs `build/context-hook.cmd install`
-8. Creates initial commit: `chore: init repo from <template> template`
+8. Creates initial commit: `init repo from <template> template`
 9. Prints next steps (and starts dev if `--start`)
 
 ## Doctor
@@ -167,3 +167,11 @@ templates/python/           # python template
 templates/mono/             # monorepo template
 build/                      # bootstrap scripts + context-hook
 ```
+## Skills
+
+This repo ships a local Codex skill to drive strap via intent inference:
+
+- `skills/strap-bootstrapper/SKILL.md` — intent-based template selection, templatize, and doctor rules
+
+To install it locally, copy the folder into your Codex skills directory (e.g., `C:\Users\<you>\.codex\skills\strap-bootstrapper`).
+
