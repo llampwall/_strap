@@ -75,20 +75,28 @@ function Get-TokenFiles($root) {
   if (Has-Command rg) {
     $args = @(
       "-l",
-      "--hidden",
-      "-g", "!**/.git/**",
-      "-g", "!**/node_modules/**",
-      "-g", "!**/dist/**",
-      "-g", "!**/build/**",
-      "-g", "!**/coverage/**",
-      "-g", "!**/.venv/**",
-      "-g", "!**/__pycache__/**",
+      "--glob", "!**/.git/**",
+      "--glob", "!**/node_modules/**",
+      "--glob", "!**/dist/**",
+      "--glob", "!**/build/**",
+      "--glob", "!**/coverage/**",
+      "--glob", "!**/.venv/**",
+      "--glob", "!**/__pycache__/**",
       $pattern,
       $root
     )
     $files = & rg @args
   } else {
     $matches = Get-ChildItem -LiteralPath $root -Recurse -File -Force |
+      Where-Object {
+        $_.FullName -notmatch "\\\\.git\\\\" -and
+        $_.FullName -notmatch "\\\\node_modules\\\\" -and
+        $_.FullName -notmatch "\\\\dist\\\\" -and
+        $_.FullName -notmatch "\\\\build\\\\" -and
+        $_.FullName -notmatch "\\\\coverage\\\\" -and
+        $_.FullName -notmatch "\\\\.venv\\\\" -and
+        $_.FullName -notmatch "\\\\__pycache__\\\\"
+      } |
       Select-String -Pattern $pattern -ErrorAction SilentlyContinue
     $files = $matches | ForEach-Object { $_.Path } | Sort-Object -Unique
   }
