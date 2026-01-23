@@ -69,7 +69,7 @@ function Replace-Tokens($root, $tokens) {
 }
 
 function Get-TokenFiles($root) {
-  $pattern = "\{\{[^}]+\}\}|<[A-Z0-9_]+>"
+  $pattern = "\{\{REPO_NAME\}\}|\{\{PY_PACKAGE\}\}|<REPO_NAME>|<PY_PACKAGE>"
   $files = @()
 
   if (Has-Command rg) {
@@ -87,21 +87,35 @@ function Get-TokenFiles($root) {
     )
     $files = & rg @args
   } else {
-    $matches = Get-ChildItem -LiteralPath $root -Recurse -File -Force |
+    $matches = Get-ChildItem -LiteralPath $root -Recurse -File |
       Where-Object {
-        $_.FullName -notmatch "\\\\.git\\\\" -and
-        $_.FullName -notmatch "\\\\node_modules\\\\" -and
-        $_.FullName -notmatch "\\\\dist\\\\" -and
-        $_.FullName -notmatch "\\\\build\\\\" -and
-        $_.FullName -notmatch "\\\\coverage\\\\" -and
-        $_.FullName -notmatch "\\\\.venv\\\\" -and
-        $_.FullName -notmatch "\\\\__pycache__\\\\"
+        $_.FullName -notmatch "[\\/]\.git[\\/]" -and
+        $_.FullName -notmatch "[\\/]node_modules[\\/]" -and
+        $_.FullName -notmatch "[\\/]dist[\\/]" -and
+        $_.FullName -notmatch "[\\/]build[\\/]" -and
+        $_.FullName -notmatch "[\\/]coverage[\\/]" -and
+        $_.FullName -notmatch "[\\/]\.venv[\\/]" -and
+        $_.FullName -notmatch "[\\/]__pycache__[\\/]"
       } |
       Select-String -Pattern $pattern -ErrorAction SilentlyContinue
     $files = $matches | ForEach-Object { $_.Path } | Sort-Object -Unique
   }
 
+  $files = $files | Where-Object { $_ -notmatch "[\\/]\.git[\\/]" }
   return $files
+}
+
+function Replace-Tokens-InFiles($files, $tokens) {
+  if (-not $files) { return }
+  foreach ($file in $files) {
+    $content = Get-Content -LiteralPath $file -Raw
+    if ($null -eq $content) { $content = "" }
+    foreach ($k in $tokens.Keys) {
+      $content = $content.Replace($k, $tokens[$k])
+    }
+    $content = $content -replace "`r`n", "`n"
+    [System.IO.File]::WriteAllText($file, $content, (New-Object System.Text.UTF8Encoding($false)))
+  }
 }
 
 function Replace-TokenNames($root, $tokens) {
@@ -122,7 +136,7 @@ function Replace-TokenNames($root, $tokens) {
 }
 
 function Get-TokenNamePaths($root) {
-  $pattern = "\{\{[^}]+\}\}|<[A-Z0-9_]+>"
+  $pattern = "\{\{REPO_NAME\}\}|\{\{PY_PACKAGE\}\}|<REPO_NAME>|<PY_PACKAGE>"
   $entries = Get-ChildItem -LiteralPath $root -Recurse -Force
   return $entries | Where-Object { $_.Name -match $pattern } | ForEach-Object { $_.FullName }
 }
@@ -131,6 +145,10 @@ function Resolve-RemainingTokens($root, $tokens) {
   Replace-Tokens $root $tokens
   Replace-TokenNames $root $tokens
 
+  $remaining = Get-TokenFiles $root
+  if ($remaining) {
+    Replace-Tokens-InFiles $remaining $tokens
+  }
   $remaining = Get-TokenFiles $root
   $remainingNames = Get-TokenNamePaths $root
   $allRemaining = @()
