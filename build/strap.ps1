@@ -20,6 +20,12 @@ param(
 
   [string] $StrapRoot,
 
+  [string] $Source,
+  [string] $Message,
+  [switch] $Push,
+  [switch] $Force,
+  [switch] $AllowDirty,
+
   [Parameter(ValueFromRemainingArguments=$true)]
   [string[]] $ExtraArgs
 )
@@ -48,6 +54,11 @@ function Apply-ExtraArgs {
       "-t" { if ($i + 1 -lt $ArgsList.Count) { $script:Template = $ArgsList[$i + 1]; $i++; continue } }
       "--path" { if ($i + 1 -lt $ArgsList.Count) { $script:Path = $ArgsList[$i + 1]; $i++; continue } }
       "-p" { if ($i + 1 -lt $ArgsList.Count) { $script:Path = $ArgsList[$i + 1]; $i++; continue } }
+      "--source" { if ($i + 1 -lt $ArgsList.Count) { $script:Source = $ArgsList[$i + 1]; $i++; continue } }
+      "--message" { if ($i + 1 -lt $ArgsList.Count) { $script:Message = $ArgsList[$i + 1]; $i++; continue } }
+      "--push" { $script:Push = $true; continue }
+      "--force" { $script:Force = $true; continue }
+      "--allow-dirty" { $script:AllowDirty = $true; continue }
       default { }
     }
   }
@@ -63,6 +74,7 @@ function Show-Help {
 strap usage:
   strap <project-name> -t <template> [-p <parent-dir>] [--skip-install] [--install] [--start]
   strap doctor [--strap-root <path>] [--keep]
+  strap templatize <templateName> [--source <path>] [--message "<msg>"] [--push] [--force] [--allow-dirty]
 
 Templates:
   node-ts-service | node-ts-web | python | mono
@@ -73,6 +85,11 @@ Flags:
   --start         full install, then start dev
   --keep          keep doctor artifacts
   --strap-root    override strap repo root
+  --source        source repo for templatize
+  --message       commit message for templatize
+  --push          push after templatize commit
+  --force         overwrite existing template folder
+  --allow-dirty   allow templatize when strap repo is dirty
 "@ | Write-Host
 }
 
@@ -285,6 +302,131 @@ function Read-EnvDefaults($path) {
   return $vars
 }
 
+function Resolve-GitRoot($path) {
+  $p = (Resolve-Path -LiteralPath $path).Path
+  $gitRoot = & git -C $p rev-parse --show-toplevel 2>$null
+  if (-not $gitRoot) { return $null }
+  return $gitRoot.Trim()
+}
+
+function Get-TemplateNameFromArgs([string[]] $ArgsList) {
+  if (-not $ArgsList) { return $null }
+  $skipNext = $false
+  foreach ($arg in $ArgsList) {
+    if ($skipNext) { $skipNext = $false; continue }
+    switch -Regex ($arg) {
+      '^(--source|--message)$' { $skipNext = $true; continue }
+      '^(--push|--force|--allow-dirty)$' { continue }
+      '^-{1,2}.*' { continue }
+      default { return $arg }
+    }
+  }
+  return $null
+}
+
+function Should-ExcludePath($fullPath, $root) {
+  $rel = $fullPath.Substring($root.Length).TrimStart('\\','/')
+  if (-not $rel) { return $false }
+  if ($rel -match '(?i)^[^\\/]*\\.git(\\|/|$)') { return $true }
+  if ($rel -match '(?i)(\\|/)(\.git|node_modules|dist|build|\.turbo|\.vite|\.next|coverage|\.pytest_cache|__pycache__|\.venv|venv|\.pnpm-store|pnpm-store)(\\|/|$)') { return $true }
+  if ($rel -match '(?i)\.(log|tmp)$') { return $true }
+  return $false
+}
+
+function Copy-RepoSnapshot($src, $dest) {
+  if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path $dest | Out-Null }
+  if (Has-Command robocopy) {
+    $xd = @('.git','node_modules','dist','build','.turbo','.vite','.next','coverage','.pytest_cache','__pycache__','.venv','venv','.pnpm-store','pnpm-store')
+    $xf = @('*.log','*.tmp')
+    $args = @($src, $dest, '/E','/SL','/XJ','/R:2','/W:1','/NFL','/NDL','/NJH','/NJS','/NP')
+    foreach ($d in $xd) { $args += '/XD'; $args += $d }
+    foreach ($f in $xf) { $args += '/XF'; $args += $f }
+    & robocopy @args | Out-Null
+    $code = $LASTEXITCODE
+    if ($code -ge 8) { return $false }
+    return $true
+  }
+
+  $items = Get-ChildItem -LiteralPath $src -Recurse -Force
+  foreach ($item in $items) {
+    $full = $item.FullName
+    if (Should-ExcludePath $full $src) { continue }
+    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+
+    $rel = $full.Substring($src.Length).TrimStart('\\','/')
+    $target = Join-Path $dest $rel
+
+    if ($item.PSIsContainer) {
+      if (-not (Test-Path $target)) { New-Item -ItemType Directory -Path $target | Out-Null }
+    } else {
+      $parent = Split-Path $target -Parent
+      if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent | Out-Null }
+      Copy-Item -LiteralPath $full -Destination $target -Force
+    }
+  }
+  return $true
+}
+
+function Invoke-Templatize {
+  param(
+    [string] $TemplateName,
+    [string] $SourcePath,
+    [string] $RootPath,
+    [switch] $ForceTemplate,
+    [switch] $AllowDirtyWorktree,
+    [string] $MessageText,
+    [switch] $DoPush
+  )
+
+  Ensure-Command git
+
+  if (-not $TemplateName) { Die "templatize requires <templateName>" }
+
+  $sourceBase = if ($SourcePath) { $SourcePath } else { (Get-Location).Path }
+  $srcRoot = Resolve-GitRoot $sourceBase
+  if (-not $srcRoot) { Die "Source path is not a git repo: $sourceBase" }
+
+  $strapRoot = if ($RootPath) { $RootPath } else { Split-Path $PSScriptRoot -Parent }
+  if (-not (Test-Path $strapRoot)) { Die "strap root not found: $strapRoot" }
+
+  $dirty = & git -C $strapRoot status --porcelain
+  if ($dirty -and -not $AllowDirtyWorktree) {
+    Die "strap repo is dirty; commit/stash or use --allow-dirty"
+  }
+
+  $dest = Join-Path $strapRoot $TemplateName
+  if (Test-Path $dest) {
+    if (-not $ForceTemplate) { Die "Template already exists: $dest (use --force to overwrite)" }
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $dest
+  }
+
+  Info "Templatizing from $srcRoot -> $dest"
+  $ok = Copy-RepoSnapshot $srcRoot $dest
+  if (-not $ok) {
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $dest
+    Die "Copy failed"
+  }
+
+  $rel = (Resolve-Path -LiteralPath $dest).Path.Substring($strapRoot.Length + 1)
+  & git -C $strapRoot add -- $rel | Out-Null
+
+  & git -C $strapRoot diff --staged --quiet
+  if ($LASTEXITCODE -eq 0) {
+    Warn "No changes to commit for $rel"
+    return
+  }
+
+  $srcName = Split-Path $srcRoot -Leaf
+  $msg = if ($MessageText) { $MessageText } else { "templates: templatize $TemplateName from $srcName" }
+  & git -C $strapRoot commit -m $msg | Out-Null
+  Ok "templatize commit created"
+
+  if ($DoPush) {
+    & git -C $strapRoot push | Out-Null
+    Ok "pushed"
+  }
+}
+
 function Invoke-Doctor {
   param(
     [string] $RootPath,
@@ -408,6 +550,12 @@ function Invoke-Doctor {
   if ($results | Where-Object { -not ($_.Created -and $_.Tokens -and $_.Tests) }) {
     exit 1
   }
+}
+
+if ($RepoName -eq "templatize") {
+  $templateName = Get-TemplateNameFromArgs $ExtraArgs
+  Invoke-Templatize -TemplateName $templateName -SourcePath $Source -RootPath $TemplateRoot -ForceTemplate:$Force.IsPresent -AllowDirtyWorktree:$AllowDirty.IsPresent -MessageText $Message -DoPush:$Push.IsPresent
+  exit 0
 }
 
 if ($RepoName -eq "doctor") {

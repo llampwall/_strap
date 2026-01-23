@@ -28,6 +28,16 @@ if /I "%~1"=="--skip-install" (
   set "ARGS=!ARGS! -Path"
 ) else if /I "%~1"=="-p" (
   set "ARGS=!ARGS! -Path"
+) else if /I "%~1"=="--source" (
+  set "ARGS=!ARGS! -Source"
+) else if /I "%~1"=="--message" (
+  set "ARGS=!ARGS! -Message"
+) else if /I "%~1"=="--push" (
+  set "ARGS=!ARGS! -Push"
+) else if /I "%~1"=="--force" (
+  set "ARGS=!ARGS! -Force"
+) else if /I "%~1"=="--allow-dirty" (
+  set "ARGS=!ARGS! -AllowDirty"
 ) else (
   set "ARGS=!ARGS! %~1"
 )

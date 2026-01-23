@@ -39,6 +39,7 @@ strap <project-name> --template <template> [--path <parent-dir>] [--skip-install
 strap <project-name> -t <template> [-p <parent-dir>] [--skip-install] [--install] [--start]
 
 strap doctor [--strap-root <path>] [--keep]
+strap templatize <templateName> [--source <path>] [--message "<msg>"] [--push] [--force] [--allow-dirty]
 ```
 
 ### Parameters
@@ -70,6 +71,9 @@ strap godex -t mono --start
 
 # Doctor run (creates temp repos, runs smoke matrix, cleans up)
 strap doctor
+
+# Snapshot an existing repo into a new template (no push)
+strap templatize my-template --source C:\Code\SomeRepo
 ```
 
 ## What Strap Does
@@ -89,6 +93,18 @@ strap doctor
 ## Doctor
 
 `strap doctor` creates a temporary root inside `_strap/_doctor/<timestamp>`, boots each template with `--skip-install`, then installs and runs a deterministic smoke matrix sequentially:
+## Templatize
+
+`strap templatize` snapshots an existing repo into a new template folder under `_strap/` (next to `mono/`, `python/`, etc.). It does a filtered copy only (no tokenization), stages just the destination folder, and creates a commit in the strap repo.
+
+Defaults:
+- Uses the current working directory's git root as the source (or `--source`).
+- Fails if the template folder exists (use `--force` to overwrite).
+- Fails if the strap repo is dirty (use `--allow-dirty`).
+- Does not push unless `--push` is provided.
+
+Excluded paths include: `.git`, `node_modules`, `dist`, `build`, `.turbo`, `.vite`, `.next`, `coverage`, `.pytest_cache`, `__pycache__`, `.venv`, `venv`, `.pnpm-store`, and `*.log`/`*.tmp`.
+
 
 - node service: `pnpm install && pnpm -s test`
 - web: `pnpm install && pnpm -s build`
