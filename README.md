@@ -93,6 +93,16 @@ strap templatize my-template --source C:\Code\SomeRepo
 ## Doctor
 
 `strap doctor` creates a temporary root inside `_strap/_doctor/<timestamp>`, boots each template with `--skip-install`, then installs and runs a deterministic smoke matrix sequentially:
+
+- node service: `pnpm install && pnpm -s test`
+- web: `pnpm install && pnpm -s build`
+- python: `python -m pip install -e . pytest && python -m pytest`
+- mono: `pnpm install && pnpm -s -w test`
+
+It also performs a short-lived `/health` check for backend templates by starting the server with `SERVER_PORT` from `.env.example`, polling `http://127.0.0.1:<port>/health` for up to 10 seconds, and then shutting it down.
+
+It fails if any unresolved tokens remain outside ignored paths, prints a concise PASS/FAIL summary, and cleans up unless `--keep` is provided.
+
 ## Templatize
 
 `strap templatize` snapshots an existing repo into a new template folder under `_strap/templates/` (next to `templates/mono/`, `templates/python/`, etc.). It does a filtered copy only (no tokenization), stages just the destination folder, and creates a commit in the strap repo.
@@ -105,15 +115,13 @@ Defaults:
 
 Excluded paths include: `.git`, `node_modules`, `dist`, `build`, `.turbo`, `.vite`, `.next`, `coverage`, `.pytest_cache`, `__pycache__`, `.venv`, `venv`, `.pnpm-store`, and `*.log`/`*.tmp`.
 
+## Logging
 
-- node service: `pnpm install && pnpm -s test`
-- web: `pnpm install && pnpm -s build`
-- python: `python -m pip install -e . pytest && python -m pytest`
-- mono: `pnpm install && pnpm -s -w test`
+All templates now include a `logs/` folder at repo root (ignored in git except `logs/.keep`).
 
-It also performs a short-lived `/health` check for backend templates by starting the server with `SERVER_PORT` from `.env.example`, polling `http://127.0.0.1:<port>/health` for up to 10 seconds, and then shutting it down.
-
-It fails if any unresolved tokens remain outside ignored paths, prints a concise PASS/FAIL summary, and cleans up unless `--keep` is provided.
+- **node-ts-service** and **mono server** write Fastify/Pino logs to `logs/server.log`.
+- **python** writes to `logs/app.log` via the stdlib `logging` module.
+- **node-ts-web** and **mono UI** log to the browser console (frontends can’t write files). To persist UI logs, send them to a backend endpoint that writes into `logs/`.
 
 ## Environment Defaults
 
@@ -167,6 +175,7 @@ templates/python/           # python template
 templates/mono/             # monorepo template
 build/                      # bootstrap scripts + context-hook
 ```
+
 ## Skills
 
 This repo ships a local Codex skill to drive strap via intent inference:
@@ -174,4 +183,3 @@ This repo ships a local Codex skill to drive strap via intent inference:
 - `skills/strap-bootstrapper/SKILL.md` — intent-based template selection, templatize, and doctor rules
 
 To install it locally, copy the folder into your Codex skills directory (e.g., `C:\Users\<you>\.codex\skills\strap-bootstrapper`).
-

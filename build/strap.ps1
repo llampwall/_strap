@@ -594,6 +594,13 @@ $tokens = @{
   "{{YEAR}}"      = "$year"
 }
 
+if ($Template -eq "python" -and $pyPackage -eq $RepoName) {
+  $conflictPath = Join-Path (Join-Path $Dest "src") "{{REPO_NAME}}"
+  if (Test-Path $conflictPath) {
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -LiteralPath $conflictPath
+  }
+}
+
 Resolve-RemainingTokens $Dest $tokens
 
 if ($Template -eq "python") {

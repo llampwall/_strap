@@ -1,3 +1,5 @@
+import { info } from "./logger";
+
 const root = document.querySelector("#app");
 
 if (root) {
@@ -6,3 +8,5 @@ if (root) {
     <p>Vite + TypeScript starter.</p>
   </main>`;
 }
+
+info("ui booted");
