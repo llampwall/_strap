@@ -70,6 +70,8 @@ strap templatize <templateName> [--source <path>] [--message "<msg>"] [--push] [
 ```
 strap clone <github-url> [--tool] [--name <custom-name>] [--yes]
 strap list [--verbose]
+strap update <name> [--yes] [--dry-run] [--rebase] [--stash] [--setup]
+strap update --all [--tool] [--software] [--yes] [--dry-run] [--rebase] [--stash] [--setup]
 strap shim <name> --- <command...> [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
 strap shim <name> --cmd "<command>" [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
 strap uninstall <name> [--yes]
@@ -99,6 +101,15 @@ strap uninstall <name> [--yes]
 
 **list**
 - `--verbose` — show full details including paths, types, shims, and timestamps
+
+**update**
+- `<name>` — registered repo name to update
+- `--all` — update all registered repos (filtered by --tool/--software if specified)
+- `--rebase` — use git pull --rebase instead of git pull
+- `--stash` — auto-stash dirty working tree before update, restore after
+- `--setup` — run strap setup after successful update (when implemented)
+- `--dry-run` — preview operations without executing
+- `--yes` — skip confirmation prompts
 
 **shim**
 - `<name>` — shim command name (creates `<name>.cmd`)
@@ -152,6 +163,24 @@ strap list
 
 # List with full details
 strap list --verbose
+
+# Update a single repo
+strap update youtube-md
+
+# Update with auto-stash (handles dirty working tree)
+strap update youtube-md --stash --yes
+
+# Update using rebase
+strap update youtube-md --rebase --yes
+
+# Update all tools
+strap update --all --tool --yes
+
+# Update all repos and run setup after
+strap update --all --yes --setup
+
+# Preview update without executing
+strap update youtube-md --dry-run
 
 # Create a shim from inside a registered repo
 cd P:\software\_scripts\youtube-md
@@ -209,6 +238,23 @@ strap uninstall youtube-md --yes
 2. Displays registered repos with name, type, and status
 3. With `--verbose`: shows full paths, shim lists, and timestamps
 
+**update**
+1. Loads registry and finds repo(s) to update
+2. Validates paths are within managed roots (`P:\software` or `P:\software\_scripts`)
+3. Checks for `.git` directory presence
+4. Detects dirty working tree (uncommitted changes):
+   - Default: aborts (single) or skips (--all)
+   - With `--stash`: auto-stash before pull, restore after
+5. Runs `git fetch --all --prune`
+6. Runs `git pull` or `git pull --rebase` (with `--rebase`)
+7. Updates registry metadata:
+   - `updated_at` — current timestamp
+   - `last_pull_at` — timestamp of last pull
+   - `last_head` — current HEAD commit hash
+   - `last_remote` — remote tracking branch hash
+8. Optionally runs `strap setup` after successful pull (with `--setup`)
+9. For `--all`: prints summary of updated/skipped/failed repos
+
 **shim**
 1. Validates shim name (no path separators or reserved characters)
 2. Determines registry attachment (current directory or `--repo` flag)
@@ -236,6 +282,9 @@ Lifecycle management uses a JSON registry at `build/registry.json` to track all 
 - `shims` — array of shim file paths
 - `created_at` — ISO 8601 timestamp
 - `updated_at` — ISO 8601 timestamp
+- `last_pull_at` — ISO 8601 timestamp of last update (added by `strap update`)
+- `last_head` — git commit hash after last update (added by `strap update`)
+- `last_remote` — remote tracking branch hash after last update (added by `strap update`)
 
 The registry enables:
 - Tracking which repos have been cloned
