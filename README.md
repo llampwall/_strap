@@ -70,6 +70,7 @@ strap templatize <templateName> [--source <path>] [--message "<msg>"] [--push] [
 ```
 strap clone <github-url> [--tool] [--name <custom-name>] [--yes]
 strap list [--verbose]
+strap open <name>
 strap adopt [--path <dir>] [--name <name>] [--tool|--software] [--yes] [--dry-run]
 strap setup [--yes] [--dry-run] [--stack python|node|go|rust] [--repo <name>]
 strap setup [--venv <path>] [--uv] [--python <exe>] [--pm npm|pnpm|yarn] [--corepack]
@@ -198,6 +199,9 @@ strap list
 
 # List with full details
 strap list --verbose
+
+# Open repo folder in File Explorer
+strap open my-project
 
 # Adopt an existing repo (current directory)
 cd P:\software\existing-repo

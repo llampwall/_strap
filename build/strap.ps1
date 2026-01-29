@@ -134,6 +134,7 @@ strap usage:
   strap <project-name> -t <template> [-p <parent-dir>] [--skip-install] [--install] [--start]
   strap clone <git-url> [--tool] [--name <name>] [--dest <dir>]
   strap list [--tool] [--software] [--json]
+  strap open <name>
   strap adopt [--path <dir>] [--name <name>] [--tool|--software] [--yes] [--dry-run]
   strap setup [--yes] [--dry-run] [--stack python|node|go|rust] [--repo <name>]
   strap setup [--venv <path>] [--uv] [--python <exe>] [--pm npm|pnpm|yarn] [--corepack]
@@ -835,6 +836,38 @@ function Invoke-List {
     Write-Host ""
     Write-Host "Total: $($filtered.Count) entries"
   }
+}
+
+function Invoke-Open {
+  param(
+    [string] $NameToOpen,
+    [string] $StrapRootPath
+  )
+
+  if (-not $NameToOpen) { Die "open requires <name>" }
+
+  # Load config and registry
+  $config = Load-Config $StrapRootPath
+  $registry = Load-Registry $config
+
+  # Find entry by name
+  $entry = $registry | Where-Object { $_.name -eq $NameToOpen }
+  if (-not $entry) {
+    Die "No entry found with name '$NameToOpen'. Use 'strap list' to see all entries."
+  }
+
+  $repoPath = $entry.path
+  if (-not $repoPath) {
+    Die "Registry entry has no path field"
+  }
+
+  if (-not (Test-Path $repoPath)) {
+    Warn "Path does not exist: $repoPath"
+    Die "Cannot open non-existent path"
+  }
+
+  Info "Opening: $repoPath"
+  & explorer.exe $repoPath
 }
 
 function Invoke-Uninstall {
@@ -2698,6 +2731,21 @@ if ($RepoName -eq "clone") {
 
 if ($RepoName -eq "list") {
   Invoke-List -FilterTool:$Tool.IsPresent -FilterSoftware:$Software.IsPresent -OutputJson:$Json.IsPresent -StrapRootPath $TemplateRoot
+  exit 0
+}
+
+if ($RepoName -eq "open") {
+  # Extract name from ExtraArgs
+  $nameToOpen = $null
+  if ($ExtraArgs -and $ExtraArgs.Count -gt 0) {
+    foreach ($arg in $ExtraArgs) {
+      if ($arg -notmatch '^--') {
+        $nameToOpen = $arg
+        break
+      }
+    }
+  }
+  Invoke-Open -NameToOpen $nameToOpen -StrapRootPath $TemplateRoot
   exit 0
 }
 
