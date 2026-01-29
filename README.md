@@ -70,6 +70,8 @@ strap templatize <templateName> [--source <path>] [--message "<msg>"] [--push] [
 ```
 strap clone <github-url> [--tool] [--name <custom-name>] [--yes]
 strap list [--verbose]
+strap setup [--yes] [--dry-run] [--stack python|node|go|rust] [--repo <name>]
+strap setup [--venv <path>] [--uv] [--python <exe>] [--pm npm|pnpm|yarn] [--corepack]
 strap update <name> [--yes] [--dry-run] [--rebase] [--stash] [--setup]
 strap update --all [--tool] [--software] [--yes] [--dry-run] [--rebase] [--stash] [--setup]
 strap shim <name> --- <command...> [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
@@ -101,6 +103,17 @@ strap uninstall <name> [--yes]
 
 **list**
 - `--verbose` — show full details including paths, types, shims, and timestamps
+
+**setup**
+- `--repo <name>` — run setup for a registered repo (changes to its directory)
+- `--stack <stack>` — force stack selection (python|node|go|rust)
+- `--venv <path>` — Python: venv directory (default `.venv`)
+- `--uv` — Python: use uv for installs (default on)
+- `--python <exe>` — Python: executable for venv creation (default `python`)
+- `--pm <manager>` — Node: force package manager (npm|pnpm|yarn)
+- `--corepack` — Node: enable corepack before install (default on)
+- `--dry-run` — preview plan without executing
+- `--yes` — skip confirmation prompts
 
 **update**
 - `<name>` — registered repo name to update
@@ -163,6 +176,21 @@ strap list
 
 # List with full details
 strap list --verbose
+
+# Setup current repo (auto-detect stack)
+strap setup
+
+# Setup registered repo
+strap setup --repo youtube-md --yes
+
+# Force stack selection
+strap setup --stack python --yes
+
+# Force package manager for Node
+strap setup --stack node --pm pnpm --yes
+
+# Dry run to see what would be executed
+strap setup --dry-run
 
 # Update a single repo
 strap update youtube-md
@@ -238,6 +266,29 @@ strap uninstall youtube-md --yes
 2. Displays registered repos with name, type, and status
 3. With `--verbose`: shows full paths, shim lists, and timestamps
 
+**setup**
+1. Determines repo path (from `--repo` flag or current directory)
+2. Validates path is within managed roots
+3. Detects stack in precedence order:
+   - Python: `pyproject.toml` or `requirements.txt`
+   - Node: `package.json`
+   - Rust: `Cargo.toml`
+   - Go: `go.mod`
+   - Docker: detected but not auto-run
+4. Generates allowlisted install plan based on stack:
+   - **Python**: create venv, install pip/uv, run uv sync or pip install
+   - **Node**: enable corepack (optional), run npm/pnpm/yarn install
+   - **Rust**: run cargo build
+   - **Go**: run go mod download
+5. Prints plan preview with exact commands
+6. Confirms with user (unless `--yes`)
+7. Executes plan sequentially, stops on first failure
+8. Updates registry metadata:
+   - `updated_at` — current timestamp
+   - `stack_detected` — detected stack type
+   - `setup_last_run_at` — timestamp of last setup
+   - `setup_status` — success or fail
+
 **update**
 1. Loads registry and finds repo(s) to update
 2. Validates paths are within managed roots (`P:\software` or `P:\software\_scripts`)
@@ -285,6 +336,9 @@ Lifecycle management uses a JSON registry at `build/registry.json` to track all 
 - `last_pull_at` — ISO 8601 timestamp of last update (added by `strap update`)
 - `last_head` — git commit hash after last update (added by `strap update`)
 - `last_remote` — remote tracking branch hash after last update (added by `strap update`)
+- `stack_detected` — detected stack type (added by `strap setup`)
+- `setup_last_run_at` — ISO 8601 timestamp of last setup (added by `strap setup`)
+- `setup_status` — setup execution status: "success" or "fail" (added by `strap setup`)
 
 The registry enables:
 - Tracking which repos have been cloned
