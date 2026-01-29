@@ -1,10 +1,18 @@
 # strap
 
-PowerShell-based repo bootstrapper and lifecycle manager.
+Complete Windows dev environment manager with two halves:
 
-**Template Bootstrapping**: Create new projects from templates with dependency installation and initial commit.
+**1. Template bootstrapping** — spin up new projects from templates (node-ts-service, mono, python, etc.) with deps installed and ready to code.
 
-**Lifecycle Management**: Clone, track, and manage GitHub repos with shim generation for global command access.
+**2. Lifecycle management** — the real power:
+- Clone GitHub repos and track them in a central registry
+- Install deps safely with stack auto-detection (python/node/go/rust)
+- Create global `.cmd` shims for any command (no manual PATH edits)
+- Update all your tools at once (`--all` flag)
+- Uninstall cleanly (removes folder + shims + registry entry)
+- Schema versioning means it won't brick itself as it evolves
+
+**What makes it special:** Single front door for your dev tools. Instead of scattered `git clone` + manual PATH edits + "where did I put that script?", everything goes through strap.
 
 ## Templates
 
@@ -31,26 +39,28 @@ strap myrepo -t mono
 
 # full install + start dev
 strap myrepo -t mono --start
-
-# run deterministic health checks
-strap doctor
 ```
 
 ### Lifecycle Management
 
 ```powershell
-# clone and register a GitHub repo
-strap clone https://github.com/user/repo --tool
+# clone a tool and register it
+strap clone https://github.com/user/cli-tool --tool
 
-# list all registered repos
-strap list
+# install its dependencies (auto-detects python/node/go/rust)
+strap setup --repo cli-tool --yes
 
-# create a global command shim
-cd P:\software\myrepo
-strap shim my-command --cmd "python script.py"
+# create a global launcher (no PATH editing needed)
+strap shim mytool --cmd "python -m cli_tool" --repo cli-tool
 
-# uninstall a registered repo (removes shims and directory)
-strap uninstall myrepo --yes
+# now "mytool" works from anywhere
+mytool --help
+
+# update all your tools at once
+strap update --all --tool
+
+# diagnose issues
+strap doctor
 ```
 
 ## Usage
