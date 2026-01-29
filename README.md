@@ -93,9 +93,7 @@ strap migrate [--yes] [--dry-run] [--backup] [--json] [--to <version>] [--plan]
 - `--skip-install` — do not install dependencies (lockfile-only install is skipped)
 - `--install` — do full install after the initial commit
 - `--start` — do full install after the initial commit, then start dev
-- `strap doctor` — run deterministic smoke checks across all templates
 - `--strap-root` — override the strap repo root (defaults to the current strap root)
-- `--keep` — keep doctor artifacts (otherwise cleaned up)
 
 #### Lifecycle Management
 
@@ -132,7 +130,7 @@ strap migrate [--yes] [--dry-run] [--backup] [--json] [--to <version>] [--plan]
 - `--all` — update all registered repos (filtered by --tool/--software if specified)
 - `--rebase` — use git pull --rebase instead of git pull
 - `--stash` — auto-stash dirty working tree before update, restore after
-- `--setup` — run strap setup after successful update (when implemented)
+- `--setup` — run strap setup after successful update
 - `--dry-run` — preview operations without executing
 - `--yes` — skip confirmation prompts
 
@@ -295,139 +293,36 @@ strap uninstall youtube-md --yes
 
 ## What Strap Does
 
-### Template Bootstrapping
+Strap has two modes:
 
-1. Creates the repo folder in the parent dir
-2. Initializes git and creates the default branch
-3. Copies `templates/common/` and the selected template
-4. Replaces tokens (`{{REPO_NAME}}`, `{{PY_PACKAGE}}`, `<REPO_NAME>`, `<PY_PACKAGE>`) in file contents and names
-5. Ensures `.env.example` exists
-6. Installs deps:
-   - default: lockfile-only (node/mono)
-   - `--install` / `--start`: full install (real dependencies)
-7. Runs `build/context-hook.cmd install`
-8. Creates initial commit: `init repo from <template> template`
-9. Prints next steps (and starts dev if `--start`)
+1. **Template bootstrapping**: make a new repo from a template (optionally install + start).
+2. **Lifecycle management**: track existing repos/tools, install deps safely, create global shims, update, uninstall.
 
-### Lifecycle Management
+### Template bootstrapping (new repo)
 
-**clone**
-1. Parses GitHub URL and determines repo name
-2. Creates registry entry with metadata (type: tool/project, paths, timestamps)
-3. Runs `git clone` into the appropriate directory (`P:\software` or `P:\software\_scripts`)
-4. Updates registry with clone status and timestamps
-5. Returns next steps (suggest creating shims if needed)
+- Creates a repo folder under the chosen parent directory
+- Initializes git and writes the template contents
+- Replaces tokens in filenames + file contents (repo/package name)
+- Ensures `.env.example` exists
+- Optionally installs deps:
+  - default: minimal/lockfile-only (node/mono)
+  - `--install` / `--start`: full install
+- Installs the context hook (`build/context-hook.cmd install`)
+- Creates an initial commit
+- Prints next steps (and starts dev if `--start`)
 
-**list**
-1. Loads registry from `build/registry.json`
-2. Displays registered repos with name, type, and status
-3. With `--verbose`: shows full paths, shim lists, and timestamps
+### Lifecycle management (existing repo/tool)
 
-**adopt**
-1. Resolves target path (from `--path` flag or current directory)
-2. Validates path is within managed roots (`P:\software` or `P:\software\_scripts`)
-3. Validates it's a git repository (`.git` directory exists)
-4. Determines scope (tool/software) from flags or infers from location
-5. Extracts git metadata (best-effort):
-   - `url`: from `git remote get-url origin`
-   - `last_head`: from `git rev-parse HEAD`
-   - `default_branch`: from symbolic ref (if available)
-6. Detects stack (same logic as `strap setup`)
-7. Creates registry entry with all metadata
-8. Previews entry and confirms (unless `--yes`)
-9. Writes to registry (unless `--dry-run`)
-10. Suggests next steps (setup, shim, update)
-
-**doctor**
-1. Loads config and validates paths
-2. Checks if `shims_root` is in PATH
-3. Checks availability and versions of tools:
-   - Critical: git, pwsh
-   - Python: python, uv (standalone or python -m uv)
-   - Node: node, npm, pnpm, yarn, corepack
-   - Optional: go, cargo
-4. Validates registry integrity:
-   - JSON validity
-   - Registry version (warns if outdated)
-   - Required fields present
-   - Path existence
-   - Shim existence
-   - Duplicate name detection
-5. Outputs report (human-readable or JSON with `--json`)
-6. Returns status: OK, WARN, or FAIL
-7. Exit codes: 0 for OK/WARN, 1 for FAIL
-
-**migrate**
-1. Loads registry and detects current version
-2. If version == target: exits with "nothing to do"
-3. If version > latest supported: fails (tool too old)
-4. Plans migrations needed (e.g., V0→V1)
-5. Applies migrations sequentially in memory:
-   - **V0→V1**: Wraps array in versioned object, backfills required fields (id, shims, created_at, updated_at)
-6. Validates schema after migration (checks all required fields)
-7. Detects and fails on duplicate entries (requires manual resolution)
-8. Displays migration summary (entries scanned, fields backfilled, etc.)
-9. Confirms with user (unless `--yes` or `--dry-run`)
-10. Creates timestamped backup if `--backup` flag provided
-11. Writes migrated registry atomically (temp file → rename)
-12. Outputs result (human-readable or JSON with `--json`)
-13. Exit codes: 0 for success/nothing to do, 1 for validation failure, 3 for write failure
-
-**setup**
-1. Determines repo path (from `--repo` flag or current directory)
-2. Validates path is within managed roots
-3. Detects stack in precedence order:
-   - Python: `pyproject.toml` or `requirements.txt`
-   - Node: `package.json`
-   - Rust: `Cargo.toml`
-   - Go: `go.mod`
-   - Docker: detected but not auto-run
-4. Generates allowlisted install plan based on stack:
-   - **Python**: create venv, install pip/uv, run uv sync or pip install
-   - **Node**: enable corepack (optional), run npm/pnpm/yarn install
-   - **Rust**: run cargo build
-   - **Go**: run go mod download
-5. Prints plan preview with exact commands
-6. Confirms with user (unless `--yes`)
-7. Executes plan sequentially, stops on first failure
-8. Updates registry metadata:
-   - `updated_at` — current timestamp
-   - `stack_detected` — detected stack type
-   - `setup_last_run_at` — timestamp of last setup
-   - `setup_status` — success or fail
-
-**update**
-1. Loads registry and finds repo(s) to update
-2. Validates paths are within managed roots (`P:\software` or `P:\software\_scripts`)
-3. Checks for `.git` directory presence
-4. Detects dirty working tree (uncommitted changes):
-   - Default: aborts (single) or skips (--all)
-   - With `--stash`: auto-stash before pull, restore after
-5. Runs `git fetch --all --prune`
-6. Runs `git pull` or `git pull --rebase` (with `--rebase`)
-7. Updates registry metadata:
-   - `updated_at` — current timestamp
-   - `last_pull_at` — timestamp of last pull
-   - `last_head` — current HEAD commit hash
-   - `last_remote` — remote tracking branch hash
-8. Optionally runs `strap setup` after successful pull (with `--setup`)
-9. For `--all`: prints summary of updated/skipped/failed repos
-
-**shim**
-1. Validates shim name (no path separators or reserved characters)
-2. Determines registry attachment (current directory or `--repo` flag)
-3. Generates `.cmd` file in `P:\software\_scripts\_bin`
-4. Optionally wraps command with `pushd`/`popd` if `--cwd` specified
-5. Updates registry entry's shim list
-6. Makes shim globally accessible (assumes `_bin` is in PATH)
-
-**uninstall**
-1. Finds registry entry by name
-2. Confirms deletion (unless `--yes`)
-3. Removes all associated shims from `P:\software\_scripts\_bin`
-4. Deletes the repository directory
-5. Removes registry entry
-6. Reports cleanup results
+- `clone`: clone a GitHub repo into `P:\software\...` or `P:\software\_scripts\...` and register it
+- `adopt`: register a repo you already cloned manually
+- `setup`: detect stack and run an allowlisted install plan (python/node/go/rust; docker = detect only)
+- `shim`: generate a `.cmd` launcher in your shims dir and attach it to the registry entry
+- `update`: pull latest changes (single or `--all`, supports `--rebase`, `--stash`, optional `--setup`)
+- `uninstall`: remove shims + folder + registry entry
+- `list`: show all registered repos
+- `open`: open a registered repo's folder in File Explorer
+- `doctor`: diagnose strap + registry health
+- `migrate`: upgrade registry schema safely (backfills required fields, enforces invariants)
 
 ### Registry System
 
@@ -435,8 +330,9 @@ Lifecycle management uses a JSON registry at `build/registry.json` to track all 
 
 - `id` — unique identifier
 - `name` — repo name (used for commands)
-- `type` — "tool" or "project"
-- `repo_path` — absolute path to the cloned repository
+- `scope` — "tool" or "software"
+- `path` — absolute path to the cloned repository
+- `url` — git remote URL (if available)
 - `shims` — array of shim file paths
 - `created_at` — ISO 8601 timestamp
 - `updated_at` — ISO 8601 timestamp
