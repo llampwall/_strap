@@ -70,6 +70,7 @@ strap templatize <templateName> [--source <path>] [--message "<msg>"] [--push] [
 ```
 strap clone <github-url> [--tool] [--name <custom-name>] [--yes]
 strap list [--verbose]
+strap adopt [--path <dir>] [--name <name>] [--tool|--software] [--yes] [--dry-run]
 strap setup [--yes] [--dry-run] [--stack python|node|go|rust] [--repo <name>]
 strap setup [--venv <path>] [--uv] [--python <exe>] [--pm npm|pnpm|yarn] [--corepack]
 strap update <name> [--yes] [--dry-run] [--rebase] [--stash] [--setup]
@@ -77,6 +78,7 @@ strap update --all [--tool] [--software] [--yes] [--dry-run] [--rebase] [--stash
 strap shim <name> --- <command...> [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
 strap shim <name> --cmd "<command>" [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
 strap uninstall <name> [--yes]
+strap doctor [--json]
 ```
 
 ### Parameters
@@ -103,6 +105,14 @@ strap uninstall <name> [--yes]
 
 **list**
 - `--verbose` — show full details including paths, types, shims, and timestamps
+
+**adopt**
+- `--path <dir>` — path to existing repo (default: current directory)
+- `--name <name>` — custom registry name (default: folder name)
+- `--tool` — force scope=tool
+- `--software` — force scope=software
+- `--yes` — skip confirmation prompts
+- `--dry-run` — preview only, no registry write
 
 **setup**
 - `--repo <name>` — run setup for a registered repo (changes to its directory)
@@ -137,6 +147,9 @@ strap uninstall <name> [--yes]
 **uninstall**
 - `<name>` — registered repo name to uninstall
 - `--yes` — skip confirmation prompts
+
+**doctor**
+- `--json` — output structured JSON instead of human-readable format
 
 ### Examples
 
@@ -176,6 +189,22 @@ strap list
 
 # List with full details
 strap list --verbose
+
+# Adopt an existing repo (current directory)
+cd P:\software\existing-repo
+strap adopt
+
+# Adopt with custom name and scope
+strap adopt --path P:\software\my-repo --name custom-name --tool --yes
+
+# Dry run adoption
+strap adopt --dry-run
+
+# Diagnose strap installation
+strap doctor
+
+# Get doctor report as JSON
+strap doctor --json
 
 # Setup current repo (auto-detect stack)
 strap setup
@@ -265,6 +294,39 @@ strap uninstall youtube-md --yes
 1. Loads registry from `build/registry.json`
 2. Displays registered repos with name, type, and status
 3. With `--verbose`: shows full paths, shim lists, and timestamps
+
+**adopt**
+1. Resolves target path (from `--path` flag or current directory)
+2. Validates path is within managed roots (`P:\software` or `P:\software\_scripts`)
+3. Validates it's a git repository (`.git` directory exists)
+4. Determines scope (tool/software) from flags or infers from location
+5. Extracts git metadata (best-effort):
+   - `url`: from `git remote get-url origin`
+   - `last_head`: from `git rev-parse HEAD`
+   - `default_branch`: from symbolic ref (if available)
+6. Detects stack (same logic as `strap setup`)
+7. Creates registry entry with all metadata
+8. Previews entry and confirms (unless `--yes`)
+9. Writes to registry (unless `--dry-run`)
+10. Suggests next steps (setup, shim, update)
+
+**doctor**
+1. Loads config and validates paths
+2. Checks if `shims_root` is in PATH
+3. Checks availability and versions of tools:
+   - Critical: git, pwsh
+   - Python: python, uv (standalone or python -m uv)
+   - Node: node, npm, pnpm, yarn, corepack
+   - Optional: go, cargo
+4. Validates registry integrity:
+   - JSON validity
+   - Required fields present
+   - Path existence
+   - Shim existence
+   - Duplicate name detection
+5. Outputs report (human-readable or JSON with `--json`)
+6. Returns status: OK, WARN, or FAIL
+7. Exit codes: 0 for OK/WARN, 1 for FAIL
 
 **setup**
 1. Determines repo path (from `--repo` flag or current directory)
@@ -364,16 +426,14 @@ The `--cmd` mode passes the entire command as a quoted string, preventing PowerS
 
 ## Doctor
 
-`strap doctor` creates a temporary root inside `_strap/_doctor/<timestamp>`, boots each template with `--skip-install`, then installs and runs a deterministic smoke matrix sequentially:
+`strap doctor` diagnoses the strap installation and environment:
 
-- node service: `pnpm install && pnpm -s test`
-- web: `pnpm install && pnpm -s build`
-- python: `python -m pip install -e . pytest && python -m pytest`
-- mono: `pnpm install && pnpm -s -w test`
-
-It also performs a short-lived `/health` check for backend templates by starting the server with `SERVER_PORT` from `.env.example`, polling `http://127.0.0.1:<port>/health` for up to 10 seconds, and then shutting it down.
-
-It fails if any unresolved tokens remain outside ignored paths, prints a concise PASS/FAIL summary, and cleans up unless `--keep` is provided.
+- Validates config paths (software_root, tools_root, shims_root, registry_path, strap_root)
+- Checks if shims_root is in PATH
+- Checks availability and versions of required tools (git, pwsh, python, uv, node toolchain, go, rust)
+- Validates registry integrity (JSON validity, required fields, path/shim existence, duplicates)
+- Reports status: OK (all good), WARN (non-critical issues), or FAIL (critical issues)
+- Use `--json` for structured output instead of human-readable format
 
 ## Templatize
 

@@ -127,6 +127,7 @@ strap usage:
   strap <project-name> -t <template> [-p <parent-dir>] [--skip-install] [--install] [--start]
   strap clone <git-url> [--tool] [--name <name>] [--dest <dir>]
   strap list [--tool] [--software] [--json]
+  strap adopt [--path <dir>] [--name <name>] [--tool|--software] [--yes] [--dry-run]
   strap setup [--yes] [--dry-run] [--stack python|node|go|rust] [--repo <name>]
   strap setup [--venv <path>] [--uv] [--python <exe>] [--pm npm|pnpm|yarn] [--corepack]
   strap update <name> [--yes] [--dry-run] [--rebase] [--stash] [--setup]
@@ -134,7 +135,7 @@ strap usage:
   strap uninstall <name> [--yes] [--dry-run] [--keep-folder] [--keep-shims]
   strap shim <name> --- <command...> [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
   strap shim <name> --cmd "<command>" [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
-  strap doctor [--strap-root <path>] [--keep]
+  strap doctor [--json]
   strap templatize <templateName> [--source <path>] [--message "<msg>"] [--push] [--force] [--allow-dirty]
 
 Templates:
@@ -1765,127 +1766,412 @@ function Invoke-Templatize {
 
 function Invoke-Doctor {
   param(
-    [string] $RootPath,
-    [switch] $KeepArtifacts
+    [string] $StrapRootPath,
+    [switch] $OutputJson
   )
 
-  $psExe = if (Has-Command pwsh) { "pwsh" } else { "powershell" }
-  $doctorBase = Join-Path $RootPath "_doctor"
-  $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-  $runRoot = Join-Path $doctorBase $stamp
-  New-Item -ItemType Directory -Path $runRoot -Force | Out-Null
+  # Load config
+  $config = Load-Config $StrapRootPath
 
-  $templates = @(
-    @{ Name = "node-ts-service"; Repo = "doctor-svc" },
-    @{ Name = "node-ts-web"; Repo = "doctor-web" },
-    @{ Name = "python"; Repo = "doctor-py" },
-    @{ Name = "mono"; Repo = "doctor-mono" }
+  $report = [PSCustomObject]@{
+    config = @{
+      software_root = $config.roots.software
+      tools_root = $config.roots.tools
+      shims_root = $config.roots.shims
+      registry_path = $config.registry
+      strap_root = $StrapRootPath
+    }
+    path_check = @{
+      shims_in_path = $false
+      path_entry = $null
+    }
+    tools = @()
+    registry_check = @{
+      exists = $false
+      valid_json = $false
+      issues = @()
+    }
+    status = "OK"
+  }
+
+  # Check PATH for shims
+  $processPath = $env:PATH -split ';'
+  $shimsRoot = $config.roots.shims
+  $foundInPath = $processPath | Where-Object { $_ -like "*$shimsRoot*" } | Select-Object -First 1
+  $report.path_check.shims_in_path = ($null -ne $foundInPath)
+  $report.path_check.path_entry = if ($foundInPath) { $foundInPath } else { "missing" }
+
+  # Check tool availability
+  function Get-ToolInfo {
+    param([string]$Command, [string]$VersionArg = "--version")
+
+    $result = @{
+      name = $Command
+      found = $false
+      path = $null
+      version = $null
+    }
+
+    try {
+      $cmd = Get-Command $Command -ErrorAction SilentlyContinue
+      if ($cmd) {
+        $result.found = $true
+        $result.path = $cmd.Source
+
+        # Try to get version
+        $versionOutput = & $Command $VersionArg 2>&1 | Out-String
+        if ($LASTEXITCODE -eq 0) {
+          $result.version = ($versionOutput -split "`n")[0].Trim()
+        }
+      }
+    } catch {}
+
+    return [PSCustomObject]$result
+  }
+
+  $report.tools += Get-ToolInfo "git"
+  $report.tools += Get-ToolInfo "pwsh" "-v"
+  $report.tools += Get-ToolInfo "python"
+
+  # Check uv (try both standalone and python -m)
+  $uvInfo = Get-ToolInfo "uv"
+  if (-not $uvInfo.found) {
+    try {
+      $versionOutput = & python -m uv --version 2>&1 | Out-String
+      if ($LASTEXITCODE -eq 0) {
+        $uvInfo.found = $true
+        $uvInfo.path = "python -m uv"
+        $uvInfo.version = ($versionOutput -split "`n")[0].Trim()
+      }
+    } catch {}
+  }
+  $report.tools += $uvInfo
+
+  $report.tools += Get-ToolInfo "node"
+  $report.tools += Get-ToolInfo "npm"
+  $report.tools += Get-ToolInfo "pnpm"
+  $report.tools += Get-ToolInfo "yarn"
+  $report.tools += Get-ToolInfo "corepack"
+  $report.tools += Get-ToolInfo "go" "version"
+  $report.tools += Get-ToolInfo "cargo"
+
+  # Check registry integrity
+  $registryPath = $config.registry
+  $report.registry_check.exists = (Test-Path $registryPath)
+
+  if ($report.registry_check.exists) {
+    try {
+      $content = Get-Content -LiteralPath $registryPath -Raw
+      if ($content.Trim() -eq "[]") {
+        $registry = @()
+      } else {
+        $registry = $content | ConvertFrom-Json
+        # Ensure array
+        if ($registry -isnot [array]) {
+          $registry = @($registry)
+        }
+      }
+      $report.registry_check.valid_json = $true
+
+      if ($registry.Count -gt 0) {
+        # Check each entry
+        $seenNames = @{}
+        foreach ($entry in $registry) {
+          # Check required fields
+          $required = @('name', 'scope', 'path', 'updated_at', 'shims')
+          foreach ($field in $required) {
+            if (-not $entry.PSObject.Properties[$field]) {
+              $report.registry_check.issues += "Entry missing required field '$field': $($entry.name)"
+            }
+          }
+
+          # Check for duplicate names
+          if ($seenNames.ContainsKey($entry.name)) {
+            $report.registry_check.issues += "Duplicate name: $($entry.name)"
+            $report.status = "WARN"
+          }
+          $seenNames[$entry.name] = $true
+
+          # Check if path exists
+          if ($entry.path -and -not (Test-Path $entry.path)) {
+            $report.registry_check.issues += "Path does not exist: $($entry.name) -> $($entry.path)"
+            $report.status = "WARN"
+          }
+
+          # Check if shims exist
+          if ($entry.shims) {
+            foreach ($shim in $entry.shims) {
+              if (-not (Test-Path $shim)) {
+                $report.registry_check.issues += "Shim does not exist: $($entry.name) -> $shim"
+                $report.status = "WARN"
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      $report.registry_check.valid_json = $false
+      $report.registry_check.issues += "Invalid JSON: $_"
+      $report.status = "FAIL"
+    }
+  }
+
+  # Adjust status based on warnings
+  $missingCriticalTools = $report.tools | Where-Object { $_.name -in @('git', 'pwsh') -and -not $_.found }
+  if ($missingCriticalTools) {
+    $report.status = "WARN"
+  }
+
+  if (-not $report.path_check.shims_in_path) {
+    $report.status = "WARN"
+  }
+
+  # Output
+  if ($OutputJson) {
+    $report | ConvertTo-Json -Depth 10
+  } else {
+    Write-Host ""
+    Write-Host "=== STRAP DOCTOR ===" -ForegroundColor Cyan
+    Write-Host ""
+
+    Write-Host "Config paths:" -ForegroundColor Yellow
+    Write-Host "  software_root:  $($report.config.software_root)"
+    Write-Host "  tools_root:     $($report.config.tools_root)"
+    Write-Host "  shims_root:     $($report.config.shims_root)"
+    Write-Host "  registry_path:  $($report.config.registry_path)"
+    Write-Host "  strap_root:     $($report.config.strap_root)"
+    Write-Host ""
+
+    Write-Host "PATH check:" -ForegroundColor Yellow
+    if ($report.path_check.shims_in_path) {
+      Write-Host "  ✓ shims_root in PATH: $($report.path_check.path_entry)" -ForegroundColor Green
+    } else {
+      Write-Host "  ✗ shims_root NOT in PATH" -ForegroundColor Red
+    }
+    Write-Host ""
+
+    Write-Host "Tool availability:" -ForegroundColor Yellow
+    foreach ($tool in $report.tools) {
+      if ($tool.found) {
+        Write-Host "  ✓ $($tool.name.PadRight(10)) $($tool.version)" -ForegroundColor Green
+      } else {
+        Write-Host "  ✗ $($tool.name.PadRight(10)) not found" -ForegroundColor Red
+      }
+    }
+    Write-Host ""
+
+    Write-Host "Registry integrity:" -ForegroundColor Yellow
+    if (-not $report.registry_check.exists) {
+      Write-Host "  Registry: missing (ok if new)" -ForegroundColor Yellow
+    } elseif (-not $report.registry_check.valid_json) {
+      Write-Host "  ✗ Invalid JSON" -ForegroundColor Red
+      foreach ($issue in $report.registry_check.issues) {
+        Write-Host "    - $issue" -ForegroundColor Red
+      }
+    } else {
+      Write-Host "  ✓ Valid JSON" -ForegroundColor Green
+      if ($report.registry_check.issues.Count -eq 0) {
+        Write-Host "  ✓ No issues found" -ForegroundColor Green
+      } else {
+        Write-Host "  Issues:" -ForegroundColor Yellow
+        foreach ($issue in $report.registry_check.issues) {
+          Write-Host "    - $issue" -ForegroundColor Yellow
+        }
+      }
+    }
+    Write-Host ""
+
+    $statusColor = switch ($report.status) {
+      "OK" { "Green" }
+      "WARN" { "Yellow" }
+      "FAIL" { "Red" }
+    }
+    Write-Host "Status: $($report.status)" -ForegroundColor $statusColor
+  }
+
+  # Exit code
+  if ($report.status -eq "FAIL") {
+    exit 1
+  } else {
+    exit 0
+  }
+}
+
+function Invoke-Adopt {
+  param(
+    [string] $TargetPath,
+    [string] $CustomName,
+    [switch] $ForceTool,
+    [switch] $ForceSoftware,
+    [switch] $NonInteractive,
+    [switch] $DryRunMode,
+    [string] $StrapRootPath
   )
 
-  $results = @()
+  # Load config and registry
+  $config = Load-Config $StrapRootPath
+  $registry = Load-Registry $config
+
+  # Determine target path
+  if (-not $TargetPath) {
+    $TargetPath = Get-Location
+  }
+
+  # Resolve to absolute path
+  $resolvedPath = [System.IO.Path]::GetFullPath($TargetPath)
+
+  # Validate within managed roots
+  $softwareRoot = $config.roots.software
+  $toolsRoot = $config.roots.tools
+
+  $withinSoftware = $resolvedPath.StartsWith($softwareRoot, [StringComparison]::OrdinalIgnoreCase)
+  $withinTools = $resolvedPath.StartsWith($toolsRoot, [StringComparison]::OrdinalIgnoreCase)
+
+  if (-not ($withinSoftware -or $withinTools)) {
+    Die "Path is not within managed roots: $resolvedPath"
+  }
+
+  # Validate it's a git repo
+  $gitDir = Join-Path $resolvedPath ".git"
+  if (-not (Test-Path $gitDir)) {
+    # Try git command
+    try {
+      & git -C $resolvedPath rev-parse --is-inside-work-tree 2>&1 | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        Die "Not a git repository: $resolvedPath"
+      }
+    } catch {
+      Die "Not a git repository: $resolvedPath"
+    }
+  }
+
+  # Determine name
+  $name = if ($CustomName) { $CustomName } else { Split-Path $resolvedPath -Leaf }
+
+  # Check for duplicates
+  $existing = $registry | Where-Object { $_.name -eq $name }
+  if ($existing) {
+    Die "Entry with name '$name' already exists in registry at $($existing.path)"
+  }
+
+  # Determine scope
+  $scope = if ($ForceTool) {
+    "tool"
+  } elseif ($ForceSoftware) {
+    "software"
+  } elseif ($withinTools) {
+    "tool"
+  } else {
+    "software"
+  }
+
+  # Extract git metadata (best-effort)
+  $url = $null
+  $lastHead = $null
+  $defaultBranch = $null
 
   try {
-    foreach ($t in $templates) {
-      $repoPath = Join-Path $runRoot $t.Repo
-      $createArgs = @(
-        "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass",
-        "-File", $PSCommandPath,
-        $t.Repo,
-        "-Template", $t.Name,
-        "-Path", $runRoot,
-        "-SkipInstall"
-      )
-
-      & $psExe @createArgs | Out-Null
-      $createOk = ($LASTEXITCODE -eq 0) -and (Test-Path $repoPath)
-
-      $tokenOk = $false
-      if ($createOk) {
-        $matches = Get-TokenMatches $repoPath
-        $tokenOk = (-not $matches -or $matches.Count -eq 0)
-        if (-not $tokenOk) {
-          Warn "Doctor: unresolved tokens in $repoPath"
-          $matches | ForEach-Object { Warn ("  {0}:{1} -> {2}" -f $_.Path, $_.Line, $_.Match) }
-        }
-      }
-
-      $testOk = $false
-      if ($createOk -and $tokenOk) {
-        switch ($t.Name) {
-          "node-ts-service" {
-            & $psExe -NoLogo -NoProfile -Command "Set-Location '$repoPath'; pnpm install --prefer-offline; pnpm -s test" | Out-Null
-            $testOk = ($LASTEXITCODE -eq 0)
-
-            if ($testOk) {
-              $envFile = Join-Path $repoPath ".env.example"
-              $vars = Read-EnvDefaults $envFile
-              $port = [int]($vars["SERVER_PORT"] | ForEach-Object { $_ })
-              if (-not $port) { $port = 6969 }
-
-              $portToUse = Get-FreePort $port
-              if ($portToUse -ne $port) { Warn "Doctor: port $port in use, using $portToUse" }
-              $cmd = "set SERVER_HOST=0.0.0.0&& set SERVER_PORT=$portToUse&& node dist\src\index.js"
-              $proc = Start-Process -FilePath "cmd.exe" -ArgumentList @('/c', $cmd) -WorkingDirectory $repoPath -PassThru
-              $ok = Wait-For-Health $portToUse
-              Stop-ProcessTree $proc.Id
-              if (-not $ok) { $testOk = $false }
-            }
-          }
-          "node-ts-web" {
-            & $psExe -NoLogo -NoProfile -Command "Set-Location '$repoPath'; pnpm install --prefer-offline; pnpm -s build" | Out-Null
-            $testOk = ($LASTEXITCODE -eq 0)
-          }
-          "python" {
-            & $psExe -NoLogo -NoProfile -Command "Set-Location '$repoPath'; python -m pip install -e . pytest; python -m pytest" | Out-Null
-            $testOk = ($LASTEXITCODE -eq 0)
-          }
-          "mono" {
-            & $psExe -NoLogo -NoProfile -Command "Set-Location '$repoPath'; pnpm install --prefer-offline; pnpm -s -w test" | Out-Null
-            $testOk = ($LASTEXITCODE -eq 0)
-
-            if ($testOk) {
-              $envFile = Join-Path $repoPath ".env.example"
-              $vars = Read-EnvDefaults $envFile
-              $port = [int]($vars["SERVER_PORT"] | ForEach-Object { $_ })
-              if (-not $port) { $port = 6969 }
-
-              $portToUse = Get-FreePort $port
-              if ($portToUse -ne $port) { Warn "Doctor: port $port in use, using $portToUse" }
-              $cmd = "set SERVER_HOST=0.0.0.0&& set SERVER_PORT=$portToUse&& node dist\src\index.js"
-              $proc = Start-Process -FilePath "cmd.exe" -ArgumentList @('/c', $cmd) -WorkingDirectory (Join-Path $repoPath "apps\server") -PassThru
-              $ok = Wait-For-Health $portToUse
-              Stop-ProcessTree $proc.Id
-              if (-not $ok) { $testOk = $false }
-            }
-          }
-        }
-      }
-
-      $results += [pscustomobject]@{
-        Template = $t.Name
-        Created = $createOk
-        Tokens  = $tokenOk
-        Tests   = $testOk
-      }
+    $remoteUrl = & git -C $resolvedPath remote get-url origin 2>&1
+    if ($LASTEXITCODE -eq 0) {
+      $url = $remoteUrl.Trim()
     }
+  } catch {}
+
+  try {
+    $head = & git -C $resolvedPath rev-parse HEAD 2>&1
+    if ($LASTEXITCODE -eq 0) {
+      $lastHead = $head.Trim()
+    }
+  } catch {}
+
+  try {
+    $branch = & git -C $resolvedPath symbolic-ref --short refs/remotes/origin/HEAD 2>&1
+    if ($LASTEXITCODE -eq 0) {
+      $defaultBranch = $branch.Trim() -replace '^origin/', ''
+    }
+  } catch {}
+
+  # Detect stack (best-effort)
+  $stackDetected = $null
+  Push-Location $resolvedPath
+  try {
+    if (Test-Path "pyproject.toml") { $stackDetected = "python" }
+    elseif (Test-Path "requirements.txt") { $stackDetected = "python" }
+    elseif (Test-Path "package.json") { $stackDetected = "node" }
+    elseif (Test-Path "Cargo.toml") { $stackDetected = "rust" }
+    elseif (Test-Path "go.mod") { $stackDetected = "go" }
   } finally {
-    if (-not $KeepArtifacts) {
-      Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $runRoot
-    } else {
-      Info "Doctor artifacts kept at $runRoot"
+    Pop-Location
+  }
+
+  # Create entry
+  $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+  $entry = [PSCustomObject]@{
+    id         = $name
+    name       = $name
+    scope      = $scope
+    path       = $resolvedPath
+    url        = $url
+    shims      = @()
+    created_at = $timestamp
+    updated_at = $timestamp
+  }
+
+  if ($lastHead) {
+    $entry | Add-Member -NotePropertyName 'last_head' -NotePropertyValue $lastHead -Force
+  }
+
+  if ($stackDetected) {
+    $entry | Add-Member -NotePropertyName 'stack_detected' -NotePropertyValue $stackDetected -Force
+  }
+
+  # Preview
+  Write-Host ""
+  Write-Host "=== ADOPT PREVIEW ===" -ForegroundColor Cyan
+  Write-Host "Name:     $name"
+  Write-Host "Scope:    $scope"
+  Write-Host "Path:     $resolvedPath"
+  if ($url) { Write-Host "URL:      $url" }
+  if ($stackDetected) { Write-Host "Stack:    $stackDetected" }
+  if ($lastHead) { Write-Host "HEAD:     $lastHead" }
+  Write-Host ""
+
+  if ($DryRunMode) {
+    Write-Host "DRY RUN - no changes will be made" -ForegroundColor Yellow
+    exit 0
+  }
+
+  # Confirmation
+  if (-not $NonInteractive) {
+    $response = Read-Host "Adopt this repo into registry? (y/n)"
+    if ($response -ne "y") {
+      Info "Aborted by user"
+      exit 1
     }
   }
 
-  Write-Host ""
-  Write-Host "strap doctor summary:"
-  foreach ($r in $results) {
-    $status = if ($r.Created -and $r.Tokens -and $r.Tests) { "PASS" } else { "FAIL" }
-    Write-Host ("  {0,-14} {1}" -f $r.Template, $status)
+  # Add to registry
+  $registry += $entry
+
+  # Save registry
+  try {
+    Save-Registry $config $registry
+    Write-Host ""
+    Ok "Adopted '$name' -> $resolvedPath"
+    Write-Host ""
+    Info "Next steps:"
+    if ($stackDetected) {
+      Info "  strap setup --repo $name  (install dependencies)"
+    }
+    Info "  strap shim <cmd> --- <command>  (create launcher)"
+    Info "  strap update $name  (pull latest changes)"
+  } catch {
+    Write-Host ""
+    Write-Host "ERROR writing registry: $_" -ForegroundColor Red
+    exit 3
   }
 
-  if ($results | Where-Object { -not ($_.Created -and $_.Tokens -and $_.Tests) }) {
-    exit 1
-  }
+  exit 0
 }
 
 if ($RepoName -eq "templatize") {
@@ -1895,7 +2181,24 @@ if ($RepoName -eq "templatize") {
 }
 
 if ($RepoName -eq "doctor") {
-  Invoke-Doctor -RootPath $TemplateRoot -KeepArtifacts:$Keep.IsPresent
+  Invoke-Doctor -StrapRootPath $TemplateRoot -OutputJson:$Json.IsPresent
+  exit 0
+}
+
+if ($RepoName -eq "adopt") {
+  # Check if --path was explicitly provided in ExtraArgs
+  $pathProvided = $false
+  if ($ExtraArgs) {
+    for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
+      if ($ExtraArgs[$i] -eq "--path" -or $ExtraArgs[$i] -eq "-p") {
+        $pathProvided = $true
+        break
+      }
+    }
+  }
+
+  $targetPath = if ($pathProvided) { $Path } else { $null }
+  Invoke-Adopt -TargetPath $targetPath -CustomName $Name -ForceTool:$Tool.IsPresent -ForceSoftware:$Software.IsPresent -NonInteractive:$Yes.IsPresent -DryRunMode:$DryRun.IsPresent -StrapRootPath $TemplateRoot
   exit 0
 }
 
