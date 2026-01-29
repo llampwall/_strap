@@ -79,6 +79,7 @@ strap shim <name> --- <command...> [--cwd <path>] [--repo <name>] [--force] [--d
 strap shim <name> --cmd "<command>" [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
 strap uninstall <name> [--yes]
 strap doctor [--json]
+strap migrate [--yes] [--dry-run] [--backup] [--json] [--to <version>] [--plan]
 ```
 
 ### Parameters
@@ -150,6 +151,14 @@ strap doctor [--json]
 
 **doctor**
 - `--json` — output structured JSON instead of human-readable format
+
+**migrate**
+- `--yes` — skip confirmation prompts
+- `--dry-run` — preview migrations without writing to registry
+- `--backup` — create timestamped backup before migrating
+- `--json` — output structured JSON report instead of human-readable format
+- `--to <version>` — migrate to specific version (default: latest)
+- `--plan` — show migration plan without executing
 
 ### Examples
 
@@ -239,6 +248,21 @@ strap update --all --yes --setup
 # Preview update without executing
 strap update youtube-md --dry-run
 
+# Check registry version and system health
+strap doctor
+
+# Migrate registry to latest version
+strap migrate --yes
+
+# Preview migration plan without executing
+strap migrate --plan
+
+# Migrate with backup
+strap migrate --yes --backup
+
+# Preview migration changes
+strap migrate --dry-run
+
 # Create a shim from inside a registered repo
 cd P:\software\_scripts\youtube-md
 strap shim youtube-md --- python youtube-md.py
@@ -320,6 +344,7 @@ strap uninstall youtube-md --yes
    - Optional: go, cargo
 4. Validates registry integrity:
    - JSON validity
+   - Registry version (warns if outdated)
    - Required fields present
    - Path existence
    - Shim existence
@@ -327,6 +352,22 @@ strap uninstall youtube-md --yes
 5. Outputs report (human-readable or JSON with `--json`)
 6. Returns status: OK, WARN, or FAIL
 7. Exit codes: 0 for OK/WARN, 1 for FAIL
+
+**migrate**
+1. Loads registry and detects current version
+2. If version == target: exits with "nothing to do"
+3. If version > latest supported: fails (tool too old)
+4. Plans migrations needed (e.g., V0→V1)
+5. Applies migrations sequentially in memory:
+   - **V0→V1**: Wraps array in versioned object, backfills required fields (id, shims, created_at, updated_at)
+6. Validates schema after migration (checks all required fields)
+7. Detects and fails on duplicate entries (requires manual resolution)
+8. Displays migration summary (entries scanned, fields backfilled, etc.)
+9. Confirms with user (unless `--yes` or `--dry-run`)
+10. Creates timestamped backup if `--backup` flag provided
+11. Writes migrated registry atomically (temp file → rename)
+12. Outputs result (human-readable or JSON with `--json`)
+13. Exit codes: 0 for success/nothing to do, 1 for validation failure, 3 for write failure
 
 **setup**
 1. Determines repo path (from `--repo` flag or current directory)

@@ -56,6 +56,10 @@ param(
   [string] $Pm,
   [switch] $Corepack,
 
+  [int] $To,
+  [switch] $Plan,
+  [switch] $Backup,
+
   [Parameter(ValueFromRemainingArguments=$true)]
   [string[]] $ExtraArgs
 )
@@ -111,6 +115,9 @@ function Apply-ExtraArgs {
       "--python" { if ($i + 1 -lt $ArgsList.Count) { $script:Python = $ArgsList[$i + 1]; $i++; continue } }
       "--pm" { if ($i + 1 -lt $ArgsList.Count) { $script:Pm = $ArgsList[$i + 1]; $i++; continue } }
       "--corepack" { $script:Corepack = $true; continue }
+      "--to" { if ($i + 1 -lt $ArgsList.Count) { $script:To = [int]$ArgsList[$i + 1]; $i++; continue } }
+      "--plan" { $script:Plan = $true; continue }
+      "--backup" { $script:Backup = $true; continue }
       default { }
     }
   }
@@ -136,6 +143,7 @@ strap usage:
   strap shim <name> --- <command...> [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
   strap shim <name> --cmd "<command>" [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
   strap doctor [--json]
+  strap migrate [--yes] [--dry-run] [--backup] [--json] [--to <version>] [--plan]
   strap templatize <templateName> [--source <path>] [--message "<msg>"] [--push] [--force] [--allow-dirty]
 
 Templates:
@@ -250,10 +258,21 @@ function Load-Registry($configObj) {
     return @()
   }
   $json = $content | ConvertFrom-Json
-  # Ensure we return an array even if there's only one item
+
+  # Handle both legacy (array) and new (object) formats
   if ($json -is [System.Array]) {
+    # Legacy format: bare array
     return @($json)
+  } elseif ($json.PSObject.Properties['entries']) {
+    # New format: object with entries property
+    $entries = $json.entries
+    if ($entries -is [System.Array]) {
+      return @($entries)
+    } else {
+      return @($entries)
+    }
   } else {
+    # Unknown format or single object: wrap in array
     return @($json)
   }
 }
@@ -262,17 +281,163 @@ function Save-Registry($configObj, $entries) {
   $registryPath = $configObj.registry
   $tmpPath = "$registryPath.tmp"
 
-  # Write to temp file first
-  # Handle empty array case explicitly
-  if ($entries.Count -eq 0) {
-    $json = "[]"
-  } else {
-    $json = $entries | ConvertTo-Json -Depth 10
+  # Always write in versioned format (V1)
+  $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+  $registryObj = [PSCustomObject]@{
+    registry_version = 1
+    updated_at = $timestamp
+    entries = @($entries)
   }
+
+  $json = $registryObj | ConvertTo-Json -Depth 10
   [System.IO.File]::WriteAllText($tmpPath, $json, (New-Object System.Text.UTF8Encoding($false)))
 
   # Atomic move (overwrites destination)
   Move-Item -LiteralPath $tmpPath -Destination $registryPath -Force
+}
+
+# Migration constants and helpers
+
+$script:LATEST_REGISTRY_VERSION = 1
+
+function Get-RegistryVersion($registryPath) {
+  if (-not (Test-Path $registryPath)) {
+    return $null
+  }
+
+  $content = Get-Content -LiteralPath $registryPath -Raw
+  if ($content.Trim() -eq "[]") {
+    return 0
+  }
+
+  try {
+    $json = $content | ConvertFrom-Json
+  } catch {
+    throw "Invalid JSON in registry"
+  }
+
+  # If it's an array, it's version 0
+  if ($json -is [System.Array]) {
+    return 0
+  }
+
+  # If it has registry_version, use it
+  if ($json.PSObject.Properties['registry_version']) {
+    return $json.registry_version
+  }
+
+  # Otherwise it's a legacy object, version 0
+  return 0
+}
+
+function Invoke-Migration-0-to-1 {
+  param(
+    [PSCustomObject] $RegistryData,
+    [ref] $Report
+  )
+
+  $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+  $entries = $RegistryData.entries
+  $modified = 0
+  $backfilled = @{}
+
+  # Process each entry
+  for ($i = 0; $i -lt $entries.Count; $i++) {
+    $entry = $entries[$i]
+    $changed = $false
+
+    # Ensure id exists
+    if (-not $entry.PSObject.Properties['id']) {
+      $entry | Add-Member -MemberType NoteProperty -Name 'id' -Value $entry.name -Force
+      $changed = $true
+      if (-not $backfilled.ContainsKey('id')) { $backfilled['id'] = 0 }
+      $backfilled['id']++
+    }
+
+    # Ensure shims exists
+    if (-not $entry.PSObject.Properties['shims']) {
+      $entry | Add-Member -MemberType NoteProperty -Name 'shims' -Value @() -Force
+      $changed = $true
+      if (-not $backfilled.ContainsKey('shims')) { $backfilled['shims'] = 0 }
+      $backfilled['shims']++
+    }
+
+    # Ensure created_at exists
+    if (-not $entry.PSObject.Properties['created_at']) {
+      $fallback = if ($entry.PSObject.Properties['updated_at']) { $entry.updated_at } else { $timestamp }
+      $entry | Add-Member -MemberType NoteProperty -Name 'created_at' -Value $fallback -Force
+      $changed = $true
+      if (-not $backfilled.ContainsKey('created_at')) { $backfilled['created_at'] = 0 }
+      $backfilled['created_at']++
+    }
+
+    # Ensure updated_at exists
+    if (-not $entry.PSObject.Properties['updated_at']) {
+      $entry | Add-Member -MemberType NoteProperty -Name 'updated_at' -Value $timestamp -Force
+      $changed = $true
+      if (-not $backfilled.ContainsKey('updated_at')) { $backfilled['updated_at'] = 0 }
+      $backfilled['updated_at']++
+    }
+
+    if ($changed) { $modified++ }
+  }
+
+  # Check for duplicates by name
+  $nameGroups = $entries | Group-Object -Property name
+  $duplicates = $nameGroups | Where-Object { $_.Count -gt 1 }
+
+  if ($duplicates) {
+    $dupNames = $duplicates | ForEach-Object { $_.Name }
+    throw "Duplicate entries found (manual resolution required): $($dupNames -join ', ')"
+  }
+
+  # Update report
+  $Report.Value.backfilled = $backfilled
+  $Report.Value.entries_modified = $modified
+  $Report.Value.duplicates = @()
+
+  # Return upgraded registry
+  return [PSCustomObject]@{
+    registry_version = 1
+    updated_at = $timestamp
+    entries = $entries
+  }
+}
+
+function Validate-RegistrySchema {
+  param([array] $Entries)
+
+  $issues = @()
+
+  for ($i = 0; $i -lt $Entries.Count; $i++) {
+    $entry = $Entries[$i]
+    $idx = $i + 1
+
+    # Required fields
+    if (-not $entry.PSObject.Properties['name'] -or -not $entry.name) {
+      $issues += "Entry ${idx}: missing required field 'name'"
+    }
+    if (-not $entry.PSObject.Properties['id'] -or -not $entry.id) {
+      $issues += "Entry ${idx}: missing required field 'id'"
+    }
+    if (-not $entry.PSObject.Properties['scope'] -or $entry.scope -notin @('tool', 'software')) {
+      $issues += "Entry ${idx}: missing or invalid 'scope' (must be 'tool' or 'software')"
+    }
+    if (-not $entry.PSObject.Properties['path'] -or -not $entry.path) {
+      $issues += "Entry ${idx}: missing required field 'path'"
+    }
+    if (-not $entry.PSObject.Properties['shims']) {
+      $issues += "Entry ${idx}: missing required field 'shims'"
+    }
+    if (-not $entry.PSObject.Properties['created_at'] -or -not $entry.created_at) {
+      $issues += "Entry ${idx}: missing required field 'created_at'"
+    }
+    if (-not $entry.PSObject.Properties['updated_at'] -or -not $entry.updated_at) {
+      $issues += "Entry ${idx}: missing required field 'updated_at'"
+    }
+  }
+
+  return $issues
 }
 
 function Copy-TemplateDir($src, $dest) {
@@ -1861,15 +2026,32 @@ function Invoke-Doctor {
 
   if ($report.registry_check.exists) {
     try {
+      # Check registry version
+      $registryVersion = Get-RegistryVersion $registryPath
+      $report.registry_check['version'] = $registryVersion
+
+      if ($registryVersion -ne $null -and $registryVersion -lt $script:LATEST_REGISTRY_VERSION) {
+        $report.registry_check.issues += "Registry version $registryVersion is outdated (latest: $script:LATEST_REGISTRY_VERSION). Run 'strap migrate' to upgrade."
+        $report.status = "WARN"
+      }
+
       $content = Get-Content -LiteralPath $registryPath -Raw
       if ($content.Trim() -eq "[]") {
         $registry = @()
       } else {
         $registry = $content | ConvertFrom-Json
-        # Ensure array
-        if ($registry -isnot [array]) {
-          $registry = @($registry)
+        # Handle both legacy (array) and new (object) formats
+        if ($registry -is [array]) {
+          # Legacy format
+          $entries = $registry
+        } elseif ($registry.PSObject.Properties['entries']) {
+          # New format
+          $entries = $registry.entries
+        } else {
+          # Unknown format
+          $entries = @($registry)
         }
+        $registry = $entries
       }
       $report.registry_check.valid_json = $true
 
@@ -1970,6 +2152,14 @@ function Invoke-Doctor {
       }
     } else {
       Write-Host "  ✓ Valid JSON" -ForegroundColor Green
+      if ($report.registry_check.ContainsKey('version') -and $report.registry_check.version -ne $null) {
+        $versionText = "Version $($report.registry_check.version)"
+        if ($report.registry_check.version -lt $script:LATEST_REGISTRY_VERSION) {
+          Write-Host "  ⚠ $versionText (outdated, latest: $script:LATEST_REGISTRY_VERSION)" -ForegroundColor Yellow
+        } else {
+          Write-Host "  ✓ $versionText (current)" -ForegroundColor Green
+        }
+      }
       if ($report.registry_check.issues.Count -eq 0) {
         Write-Host "  ✓ No issues found" -ForegroundColor Green
       } else {
@@ -2174,6 +2364,289 @@ function Invoke-Adopt {
   exit 0
 }
 
+function Invoke-Migrate {
+  param(
+    [int] $TargetVersion = $script:LATEST_REGISTRY_VERSION,
+    [switch] $PlanOnly,
+    [switch] $NonInteractive,
+    [switch] $DryRunMode,
+    [switch] $CreateBackup,
+    [switch] $OutputJson,
+    [string] $StrapRootPath
+  )
+
+  # Load config
+  $config = Load-Config $StrapRootPath
+  $registryPath = $config.registry
+
+  # Check if registry exists
+  if (-not (Test-Path $registryPath)) {
+    if ($OutputJson) {
+      $report = [PSCustomObject]@{
+        status = "nothing_to_do"
+        message = "No registry found"
+      }
+      $report | ConvertTo-Json -Depth 10 | Write-Host
+    } else {
+      Info "No registry found; nothing to migrate"
+    }
+    exit 0
+  }
+
+  # Read and parse registry
+  $content = Get-Content -LiteralPath $registryPath -Raw
+  try {
+    if ($content.Trim() -eq "[]") {
+      $json = @()
+      $currentVersion = 0
+    } else {
+      $json = $content | ConvertFrom-Json
+
+      # Detect version
+      if ($json -is [System.Array]) {
+        $currentVersion = 0
+      } elseif ($json.PSObject.Properties['registry_version']) {
+        $currentVersion = $json.registry_version
+      } else {
+        $currentVersion = 0
+      }
+    }
+  } catch {
+    if ($OutputJson) {
+      $report = [PSCustomObject]@{
+        status = "error"
+        message = "Invalid JSON in registry"
+        error = $_.Exception.Message
+      }
+      $report | ConvertTo-Json -Depth 10 | Write-Host
+    } else {
+      Write-Host ""
+      Write-Host "ERROR: Invalid JSON in registry: $_" -ForegroundColor Red
+    }
+    exit 1
+  }
+
+  # Check if target version is too new
+  if ($TargetVersion -gt $script:LATEST_REGISTRY_VERSION) {
+    $msg = "Target version $TargetVersion is not supported (latest: $script:LATEST_REGISTRY_VERSION)"
+    if ($OutputJson) {
+      $report = [PSCustomObject]@{
+        status = "error"
+        message = $msg
+      }
+      $report | ConvertTo-Json -Depth 10 | Write-Host
+    } else {
+      Write-Host ""
+      Write-Host "ERROR: $msg" -ForegroundColor Red
+    }
+    exit 1
+  }
+
+  # Check if already at target version
+  if ($currentVersion -eq $TargetVersion) {
+    if ($OutputJson) {
+      $report = [PSCustomObject]@{
+        status = "nothing_to_do"
+        current_version = $currentVersion
+        target_version = $TargetVersion
+        message = "Registry already at version $TargetVersion"
+      }
+      $report | ConvertTo-Json -Depth 10 | Write-Host
+    } else {
+      Info "Registry already at version $TargetVersion; nothing to do"
+    }
+    exit 0
+  }
+
+  # Prepare registry data structure
+  if ($json -is [System.Array]) {
+    $registryData = [PSCustomObject]@{
+      registry_version = 0
+      updated_at = $null
+      entries = $json
+    }
+  } else {
+    $registryData = $json
+    if (-not $registryData.PSObject.Properties['entries']) {
+      # Legacy object format: treat as single entry wrapped in array
+      $registryData = [PSCustomObject]@{
+        registry_version = 0
+        updated_at = $null
+        entries = @($json)
+      }
+    }
+  }
+
+  # Plan migrations
+  $migrationsToApply = @()
+  for ($v = $currentVersion; $v -lt $TargetVersion; $v++) {
+    $migrationsToApply += "$v->$($v + 1)"
+  }
+
+  # Initialize report
+  $migrationReport = [PSCustomObject]@{
+    current_version = $currentVersion
+    target_version = $TargetVersion
+    migrations_planned = $migrationsToApply
+    entries_scanned = $registryData.entries.Count
+    entries_modified = 0
+    backfilled = @{}
+    duplicates = @()
+    warnings = @()
+    backup_path = $null
+  }
+
+  # Display plan
+  if (-not $OutputJson) {
+    Write-Host ""
+    Write-Host "=== MIGRATION PLAN ===" -ForegroundColor Cyan
+    Write-Host "Current version: $currentVersion"
+    Write-Host "Target version:  $TargetVersion"
+    Write-Host "Migrations:      $($migrationsToApply -join ', ')"
+    Write-Host "Entries:         $($registryData.entries.Count)"
+    Write-Host ""
+  }
+
+  if ($PlanOnly) {
+    if ($OutputJson) {
+      $migrationReport | Add-Member -NotePropertyName 'status' -NotePropertyValue 'plan_only' -Force
+      $migrationReport | ConvertTo-Json -Depth 10 | Write-Host
+    } else {
+      Info "Plan only; no changes will be made"
+    }
+    exit 0
+  }
+
+  # Apply migrations
+  try {
+    $reportRef = [ref]$migrationReport
+
+    for ($v = $currentVersion; $v -lt $TargetVersion; $v++) {
+      $nextVersion = $v + 1
+
+      if ($nextVersion -eq 1) {
+        $registryData = Invoke-Migration-0-to-1 -RegistryData $registryData -Report $reportRef
+      } else {
+        throw "Migration $v->$nextVersion not implemented"
+      }
+    }
+  } catch {
+    if ($OutputJson) {
+      $migrationReport | Add-Member -NotePropertyName 'status' -NotePropertyValue 'error' -Force
+      $migrationReport | Add-Member -NotePropertyName 'error' -NotePropertyValue $_.Exception.Message -Force
+      $migrationReport | ConvertTo-Json -Depth 10 | Write-Host
+    } else {
+      Write-Host ""
+      Write-Host "ERROR during migration: $_" -ForegroundColor Red
+    }
+    exit 1
+  }
+
+  # Validate schema
+  $validationIssues = Validate-RegistrySchema -Entries $registryData.entries
+  if ($validationIssues.Count -gt 0) {
+    if ($OutputJson) {
+      $migrationReport | Add-Member -NotePropertyName 'status' -NotePropertyValue 'validation_failed' -Force
+      $migrationReport | Add-Member -NotePropertyName 'validation_errors' -NotePropertyValue $validationIssues -Force
+      $migrationReport | ConvertTo-Json -Depth 10 | Write-Host
+    } else {
+      Write-Host ""
+      Write-Host "ERROR: Schema validation failed:" -ForegroundColor Red
+      foreach ($issue in $validationIssues) {
+        Write-Host "  - $issue" -ForegroundColor Red
+      }
+    }
+    exit 1
+  }
+
+  # Display migration summary
+  if (-not $OutputJson) {
+    Write-Host "=== MIGRATION SUMMARY ===" -ForegroundColor Cyan
+    Write-Host "Entries scanned:  $($migrationReport.entries_scanned)"
+    Write-Host "Entries modified: $($migrationReport.entries_modified)"
+    if ($migrationReport.backfilled.Count -gt 0) {
+      Write-Host "Backfilled fields:"
+      foreach ($field in $migrationReport.backfilled.Keys) {
+        Write-Host "  - ${field}: $($migrationReport.backfilled[$field])"
+      }
+    }
+    Write-Host ""
+  }
+
+  if ($DryRunMode) {
+    if ($OutputJson) {
+      $migrationReport | Add-Member -NotePropertyName 'status' -NotePropertyValue 'dry_run' -Force
+      $migrationReport | ConvertTo-Json -Depth 10 | Write-Host
+    } else {
+      Write-Host "DRY RUN - no changes will be made" -ForegroundColor Yellow
+    }
+    exit 0
+  }
+
+  # Confirmation
+  if (-not $NonInteractive) {
+    $response = Read-Host "Apply migrations now? (y/n)"
+    if ($response -ne "y") {
+      Info "Aborted by user"
+      exit 1
+    }
+  }
+
+  # Create backup if requested
+  if ($CreateBackup) {
+    $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $backupPath = "$registryPath.bak-$timestamp"
+    try {
+      Copy-Item -LiteralPath $registryPath -Destination $backupPath -Force
+      $migrationReport.backup_path = $backupPath
+      if (-not $OutputJson) {
+        Info "Backup created: $backupPath"
+      }
+    } catch {
+      if ($OutputJson) {
+        $migrationReport | Add-Member -NotePropertyName 'status' -NotePropertyValue 'error' -Force
+        $migrationReport | Add-Member -NotePropertyName 'error' -NotePropertyValue "Backup failed: $_" -Force
+        $migrationReport | ConvertTo-Json -Depth 10 | Write-Host
+      } else {
+        Write-Host ""
+        Write-Host "ERROR creating backup: $_" -ForegroundColor Red
+      }
+      exit 3
+    }
+  }
+
+  # Write migrated registry
+  try {
+    $tmpPath = "$registryPath.tmp"
+    $json = $registryData | ConvertTo-Json -Depth 10
+    [System.IO.File]::WriteAllText($tmpPath, $json, (New-Object System.Text.UTF8Encoding($false)))
+    Move-Item -LiteralPath $tmpPath -Destination $registryPath -Force
+
+    if ($OutputJson) {
+      $migrationReport | Add-Member -NotePropertyName 'status' -NotePropertyValue 'success' -Force
+      $migrationReport | ConvertTo-Json -Depth 10 | Write-Host
+    } else {
+      Write-Host ""
+      Ok "Registry migrated to version $TargetVersion"
+      if ($CreateBackup) {
+        Info "Backup: $backupPath"
+      }
+    }
+  } catch {
+    if ($OutputJson) {
+      $migrationReport | Add-Member -NotePropertyName 'status' -NotePropertyValue 'error' -Force
+      $migrationReport | Add-Member -NotePropertyName 'error' -NotePropertyValue "Write failed: $_" -Force
+      $migrationReport | ConvertTo-Json -Depth 10 | Write-Host
+    } else {
+      Write-Host ""
+      Write-Host "ERROR writing registry: $_" -ForegroundColor Red
+    }
+    exit 3
+  }
+
+  exit 0
+}
+
 if ($RepoName -eq "templatize") {
   $templateName = Get-TemplateNameFromArgs $ExtraArgs
   Invoke-Templatize -TemplateName $templateName -SourcePath $Source -RootPath $TemplateRoot -ForceTemplate:$Force.IsPresent -AllowDirtyWorktree:$AllowDirty.IsPresent -MessageText $Message -DoPush:$Push.IsPresent
@@ -2182,6 +2655,12 @@ if ($RepoName -eq "templatize") {
 
 if ($RepoName -eq "doctor") {
   Invoke-Doctor -StrapRootPath $TemplateRoot -OutputJson:$Json.IsPresent
+  exit 0
+}
+
+if ($RepoName -eq "migrate") {
+  $targetVersion = if ($To -gt 0) { $To } else { $script:LATEST_REGISTRY_VERSION }
+  Invoke-Migrate -TargetVersion $targetVersion -PlanOnly:$Plan.IsPresent -NonInteractive:$Yes.IsPresent -DryRunMode:$DryRun.IsPresent -CreateBackup:$Backup.IsPresent -OutputJson:$Json.IsPresent -StrapRootPath $TemplateRoot
   exit 0
 }
 
