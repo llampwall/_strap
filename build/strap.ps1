@@ -40,6 +40,7 @@ param(
 
   [string] $Cwd,
   [string] $Repo,
+  [string] $Cmd,
 
   [Parameter(ValueFromRemainingArguments=$true)]
   [string[]] $ExtraArgs
@@ -85,6 +86,7 @@ function Apply-ExtraArgs {
       "--keep-shims" { $script:KeepShims = $true; continue }
       "--cwd" { if ($i + 1 -lt $ArgsList.Count) { $script:Cwd = $ArgsList[$i + 1]; $i++; continue } }
       "--repo" { if ($i + 1 -lt $ArgsList.Count) { $script:Repo = $ArgsList[$i + 1]; $i++; continue } }
+      "--cmd" { if ($i + 1 -lt $ArgsList.Count) { $script:Cmd = $ArgsList[$i + 1]; $i++; continue } }
       default { }
     }
   }
@@ -103,6 +105,7 @@ strap usage:
   strap list [--tool] [--software] [--json]
   strap uninstall <name> [--yes] [--dry-run] [--keep-folder] [--keep-shims]
   strap shim <name> --- <command...> [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
+  strap shim <name> --cmd "<command>" [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
   strap doctor [--strap-root <path>] [--keep]
   strap templatize <templateName> [--source <path>] [--message "<msg>"] [--push] [--force] [--allow-dirty]
 
@@ -125,6 +128,7 @@ Flags:
   --keep-folder   preserve repo folder during uninstall
   --keep-shims    preserve shims during uninstall
   --cwd           working directory for shim execution
+  --cmd           command string (alternative to --- for complex commands with flags)
   --repo          attach shim to specific registry entry
   --source        source repo for templatize
   --message       commit message for templatize
@@ -819,7 +823,7 @@ function Invoke-Uninstall {
 function Invoke-Shim {
   param(
     [string] $ShimName,
-    [string[]] $CommandArgs,
+    [string] $CommandLine,
     [string] $WorkingDir,
     [string] $RegistryEntryName,
     [switch] $ForceOverwrite,
@@ -829,7 +833,7 @@ function Invoke-Shim {
   )
 
   if (-not $ShimName) { Die "shim requires <name>" }
-  if (-not $CommandArgs -or $CommandArgs.Count -eq 0) { Die "shim requires --- <command...> (use three dashes before command)" }
+  if (-not $CommandLine) { Die "shim requires a command (use --- <command...> or --cmd `"<command>`")" }
 
   # Validate shim name (no path separators or reserved chars)
   if ($ShimName -match '[\\/:*?"<>|]') {
@@ -886,9 +890,6 @@ function Invoke-Shim {
     }
   }
 
-  # Join command args into a single string
-  $commandLine = $CommandArgs -join ' '
-
   # Preview
   Write-Host ""
   Write-Host "=== SHIM PREVIEW ===" -ForegroundColor Cyan
@@ -896,7 +897,7 @@ function Invoke-Shim {
   Write-Host "Shim path:      $shimPathResolved"
   Write-Host "Attached repo:  $($attachedEntry.name) ($($attachedEntry.scope))"
   Write-Host "Repo path:      $($attachedEntry.path)"
-  Write-Host "Command:        $commandLine"
+  Write-Host "Command:        $CommandLine"
   if ($WorkingDir) {
     Write-Host "Working dir:    $WorkingDir"
   }
@@ -945,7 +946,7 @@ pushd "$WorkingDir" >nul
   }
 
   $shimContent += @"
-$commandLine %*
+$CommandLine %*
 set "EC=%ERRORLEVEL%"
 
 "@
@@ -1253,34 +1254,56 @@ if ($RepoName -eq "uninstall") {
 }
 
 if ($RepoName -eq "shim") {
-  # Extract shim name and command args from ExtraArgs
-  # Format: strap shim <name> --- <command...>
-  # Note: using --- (three dashes) instead of -- to avoid PowerShell parameter binding conflicts
+  # Two input modes:
+  # 1. --cmd "<command>" - command passed as string (avoids PowerShell parameter binding)
+  # 2. strap shim <name> --- <command...> - command parsed from args (uses --- to avoid conflicts)
+
   $shimName = $null
-  $commandArgs = @()
-  $foundSeparator = $false
+  $commandLine = $null
 
-  if ($ExtraArgs -and $ExtraArgs.Count -gt 0) {
-    for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
-      $arg = $ExtraArgs[$i]
-
-      if ($arg -eq "---" -or $arg -eq "--") {
-        $foundSeparator = $true
-        # Everything after --- is the command
-        if ($i + 1 -lt $ExtraArgs.Count) {
-          $commandArgs = $ExtraArgs[($i + 1)..($ExtraArgs.Count - 1)]
+  if ($Cmd) {
+    # --cmd mode: command already provided as string
+    # Extract shim name from ExtraArgs (first non-flag arg)
+    if ($ExtraArgs -and $ExtraArgs.Count -gt 0) {
+      foreach ($arg in $ExtraArgs) {
+        if ($arg -notmatch '^--' -and -not $shimName) {
+          $shimName = $arg
+          break
         }
-        break
       }
+    }
+    $commandLine = $Cmd
+  } else {
+    # --- mode: parse separator and extract args
+    $commandArgs = @()
+    $foundSeparator = $false
 
-      # Before ---, look for the shim name (first non-flag arg)
-      if (-not $foundSeparator -and $arg -notmatch '^--' -and -not $shimName) {
-        $shimName = $arg
+    if ($ExtraArgs -and $ExtraArgs.Count -gt 0) {
+      for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
+        $arg = $ExtraArgs[$i]
+
+        if ($arg -eq "---" -or $arg -eq "--") {
+          $foundSeparator = $true
+          # Everything after --- is the command
+          if ($i + 1 -lt $ExtraArgs.Count) {
+            $commandArgs = $ExtraArgs[($i + 1)..($ExtraArgs.Count - 1)]
+          }
+          break
+        }
+
+        # Before ---, look for the shim name (first non-flag arg)
+        if (-not $foundSeparator -and $arg -notmatch '^--' -and -not $shimName) {
+          $shimName = $arg
+        }
       }
+    }
+
+    if ($commandArgs.Count -gt 0) {
+      $commandLine = $commandArgs -join ' '
     }
   }
 
-  Invoke-Shim -ShimName $shimName -CommandArgs $commandArgs -WorkingDir $Cwd -RegistryEntryName $Repo -ForceOverwrite:$Force.IsPresent -DryRunMode:$DryRun.IsPresent -NonInteractive:$Yes.IsPresent -StrapRootPath $TemplateRoot
+  Invoke-Shim -ShimName $shimName -CommandLine $commandLine -WorkingDir $Cwd -RegistryEntryName $Repo -ForceOverwrite:$Force.IsPresent -DryRunMode:$DryRun.IsPresent -NonInteractive:$Yes.IsPresent -StrapRootPath $TemplateRoot
   exit 0
 }
 

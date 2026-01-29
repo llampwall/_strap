@@ -47,7 +47,7 @@ strap list
 
 # create a global command shim
 cd P:\software\myrepo
-strap shim my-command --- python script.py
+strap shim my-command --cmd "python script.py"
 
 # uninstall a registered repo (removes shims and directory)
 strap uninstall myrepo --yes
@@ -71,6 +71,7 @@ strap templatize <templateName> [--source <path>] [--message "<msg>"] [--push] [
 strap clone <github-url> [--tool] [--name <custom-name>] [--yes]
 strap list [--verbose]
 strap shim <name> --- <command...> [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
+strap shim <name> --cmd "<command>" [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
 strap uninstall <name> [--yes]
 ```
 
@@ -102,6 +103,7 @@ strap uninstall <name> [--yes]
 **shim**
 - `<name>` — shim command name (creates `<name>.cmd`)
 - `--- <command...>` — command to execute (use three dashes as separator)
+- `--cmd "<command>"` — alternative to `---` for commands with flags (avoids PowerShell parameter binding)
 - `--cwd <path>` — working directory for the shim
 - `--repo <name>` — attach shim to this registry entry (otherwise uses current directory)
 - `--force` — overwrite existing shim
@@ -166,6 +168,12 @@ strap shim youtube-md --force --- python updated-script.py
 
 # Preview shim without creating it
 strap shim test --- python test.py --dry-run
+
+# Use --cmd for commands with single-letter flags (avoids PowerShell parameter binding)
+strap shim flask --cmd "python -m flask run" --cwd P:\software\myapp
+
+# Complex command with multiple flags
+strap shim serve --cmd "python -m http.server 8080 --bind 127.0.0.1"
 
 # Uninstall a registered repo (removes directory and shims)
 strap uninstall youtube-md --yes
@@ -237,10 +245,19 @@ The registry enables:
 
 ### Known Limitations
 
-**PowerShell Parameter Binding**: When using `strap shim`, single-letter flags in the command (like `python -m module`) may conflict with PowerShell's parameter matching. If you encounter errors, try:
-- Using full parameter names instead of short flags
-- Alternative command syntax that avoids single-letter flags
-- Wrapping the command in a dedicated script and shimming the script instead
+**PowerShell Parameter Binding**: When using `strap shim` with the `---` separator, single-letter flags in the command (like `python -m module`) may conflict with PowerShell's parameter matching.
+
+**Solution**: Use `--cmd "<command>"` instead of `--- <command...>` for commands with flags:
+
+```powershell
+# ✅ Recommended: use --cmd for commands with flags
+strap shim flask --cmd "python -m flask run"
+
+# ⚠️  May cause issues: PowerShell may consume -m
+strap shim flask --- python -m flask run
+```
+
+The `--cmd` mode passes the entire command as a quoted string, preventing PowerShell from parsing individual flags.
 
 ## Doctor
 

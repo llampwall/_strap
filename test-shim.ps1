@@ -170,7 +170,32 @@ try {
     }
   }
 
-  # Test 7: Invalid shim name (with path separators)
+  # Test 7: Create shim using --cmd mode (avoids PowerShell parameter binding)
+  $testResults += Test-Step "Create shim with --cmd mode" {
+    Push-Location "P:\software\_scripts\test-shim-repo"
+    try {
+      & $strapPs1 shim cmd-mode-shim --yes --cmd "python -m flask run" --repo test-shim-repo
+      if ($LASTEXITCODE -ne 0) { throw "Command failed with exit code $LASTEXITCODE" }
+
+      # Check shim file was created
+      if (-not (Test-Path "$shimsPath\cmd-mode-shim.cmd")) { throw "Shim file not created" }
+
+      # Check shim content includes command with -m flag
+      $content = Get-Content "$shimsPath\cmd-mode-shim.cmd" -Raw
+      if ($content -notmatch "python -m flask run") { throw "Shim content incorrect" }
+
+      # Check registry was updated
+      $registry = Get-Content -LiteralPath $registryPath -Raw | ConvertFrom-Json
+      $entry = $registry | Where-Object { $_.name -eq "test-shim-repo" }
+      if ($entry.shims.Count -ne 4) { throw "Shim not added to registry" }
+
+      Write-Host "  Verified: --cmd mode preserves flags like -m"
+    } finally {
+      Pop-Location
+    }
+  }
+
+  # Test 9: Invalid shim name (with path separators)
   Write-Host "`n=== Invalid shim name rejected ===" -ForegroundColor Cyan
   Push-Location "P:\software\_scripts\test-shim-repo"
   pwsh -NoProfile -Command "& '$strapPs1' shim 'bad/name' --yes --- python test.py" 2>&1 | Out-Null
@@ -185,7 +210,7 @@ try {
     $testResults += $false
   }
 
-  # Test 8: No registry entry for current directory (should fail)
+  # Test 10: No registry entry for current directory (should fail)
   Write-Host "`n=== Fail when no registry entry found ===" -ForegroundColor Cyan
   Push-Location "P:\software"
   pwsh -NoProfile -Command "& '$strapPs1' shim orphan-shim --yes --- python test.py" 2>&1 | Out-Null
@@ -216,7 +241,8 @@ try {
   $shimsToRemove = @(
     "$shimsPath\basic-shim.cmd",
     "$shimsPath\cwd-shim.cmd",
-    "$shimsPath\repo-shim.cmd"
+    "$shimsPath\repo-shim.cmd",
+    "$shimsPath\cmd-mode-shim.cmd"
   )
 
   foreach ($shim in $shimsToRemove) {
@@ -240,10 +266,12 @@ try {
 
   Write-Host "`n✓ ALL TESTS PASSED" -ForegroundColor Green
 
-  # Note about known limitation
-  Write-Host "`n📝 NOTE: PowerShell parameter binding limitation" -ForegroundColor Yellow
-  Write-Host "Single-letter flags in commands (like 'python -m module') may conflict with" -ForegroundColor Yellow
-  Write-Host "PowerShell parameters. Use full parameter names or alternative syntax when possible." -ForegroundColor Yellow
+  # Note about solution to PowerShell parameter binding
+  Write-Host "`n📝 NOTE: PowerShell parameter binding with --- separator" -ForegroundColor Yellow
+  Write-Host "Commands with single-letter flags (like 'python -m module') may conflict with" -ForegroundColor Yellow
+  Write-Host "PowerShell parameters when using the --- separator." -ForegroundColor Yellow
+  Write-Host "Solution: Use --cmd `"<command>`" instead of --- <command...>" -ForegroundColor Green
+  Write-Host "Example: strap shim flask --cmd `"python -m flask run`"" -ForegroundColor Green
 
 } catch {
   Write-Host "`n✗ TEST SUITE FAILED: $_" -ForegroundColor Red
