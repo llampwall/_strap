@@ -1,6 +1,10 @@
 # strap
 
-Repo bootstrapper for common project templates. `strap` copies a shared `templates/common/` baseline plus a template, replaces tokens, initializes git, optionally installs deps, runs `context-hook`, and makes the first commit.
+PowerShell-based repo bootstrapper and lifecycle manager.
+
+**Template Bootstrapping**: Create new projects from templates with dependency installation and initial commit.
+
+**Lifecycle Management**: Clone, track, and manage GitHub repos with shim generation for global command access.
 
 ## Templates
 
@@ -19,7 +23,7 @@ Repo bootstrapper for common project templates. `strap` copies a shared `templat
 
 ## Quick Start
 
-From a PowerShell prompt:
+### Template Bootstrapping
 
 ```powershell
 # bootstrap a monorepo in P:\software\myrepo
@@ -32,7 +36,26 @@ strap myrepo -t mono --start
 strap doctor
 ```
 
+### Lifecycle Management
+
+```powershell
+# clone and register a GitHub repo
+strap clone https://github.com/user/repo --tool
+
+# list all registered repos
+strap list
+
+# create a global command shim
+cd P:\software\myrepo
+strap shim my-command --- python script.py
+
+# uninstall a registered repo (removes shims and directory)
+strap uninstall myrepo --yes
+```
+
 ## Usage
+
+### Template Bootstrapping
 
 ```
 strap <project-name> --template <template> [--path <parent-dir>] [--skip-install] [--install] [--start]
@@ -42,7 +65,18 @@ strap doctor [--strap-root <path>] [--keep]
 strap templatize <templateName> [--source <path>] [--message "<msg>"] [--push] [--force] [--allow-dirty]
 ```
 
+### Lifecycle Management
+
+```
+strap clone <github-url> [--tool] [--name <custom-name>] [--yes]
+strap list [--verbose]
+strap shim <name> --- <command...> [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
+strap uninstall <name> [--yes]
+```
+
 ### Parameters
+
+#### Template Bootstrapping
 
 - `project-name` (positional) — target repo name
 - `--template` / `-t` — one of: `node-ts-service`, `node-ts-web`, `python`, `mono`
@@ -54,7 +88,33 @@ strap templatize <templateName> [--source <path>] [--message "<msg>"] [--push] [
 - `--strap-root` — override the strap repo root (defaults to the current strap root)
 - `--keep` — keep doctor artifacts (otherwise cleaned up)
 
+#### Lifecycle Management
+
+**clone**
+- `<github-url>` — GitHub repository URL (https or git)
+- `--tool` — clone into `P:\software\_scripts` instead of `P:\software`
+- `--name <custom-name>` — override the repo name (default: extracted from URL)
+- `--yes` — skip confirmation prompts
+
+**list**
+- `--verbose` — show full details including paths, types, shims, and timestamps
+
+**shim**
+- `<name>` — shim command name (creates `<name>.cmd`)
+- `--- <command...>` — command to execute (use three dashes as separator)
+- `--cwd <path>` — working directory for the shim
+- `--repo <name>` — attach shim to this registry entry (otherwise uses current directory)
+- `--force` — overwrite existing shim
+- `--dry-run` — preview without writing files
+- `--yes` — skip confirmation prompts
+
+**uninstall**
+- `<name>` — registered repo name to uninstall
+- `--yes` — skip confirmation prompts
+
 ### Examples
+
+#### Template Bootstrapping
 
 ```powershell
 # Node service
@@ -76,7 +136,44 @@ strap doctor
 strap templatize my-template --source C:\Code\SomeRepo
 ```
 
+#### Lifecycle Management
+
+```powershell
+# Clone a tool/utility into _scripts
+strap clone https://github.com/user/youtube-md --tool
+
+# Clone a project into software (custom name)
+strap clone https://github.com/user/repo --name my-project
+
+# List registered repos
+strap list
+
+# List with full details
+strap list --verbose
+
+# Create a shim from inside a registered repo
+cd P:\software\_scripts\youtube-md
+strap shim youtube-md --- python youtube-md.py
+
+# Create a shim with working directory
+strap shim godex --cwd P:\software\godex --- node scripts\cli.js
+
+# Create a shim from outside the repo
+strap shim my-tool --repo youtube-md --- python main.py
+
+# Force overwrite an existing shim
+strap shim youtube-md --force --- python updated-script.py
+
+# Preview shim without creating it
+strap shim test --- python test.py --dry-run
+
+# Uninstall a registered repo (removes directory and shims)
+strap uninstall youtube-md --yes
+```
+
 ## What Strap Does
+
+### Template Bootstrapping
 
 1. Creates the repo folder in the parent dir
 2. Initializes git and creates the default branch
@@ -89,6 +186,61 @@ strap templatize my-template --source C:\Code\SomeRepo
 7. Runs `build/context-hook.cmd install`
 8. Creates initial commit: `init repo from <template> template`
 9. Prints next steps (and starts dev if `--start`)
+
+### Lifecycle Management
+
+**clone**
+1. Parses GitHub URL and determines repo name
+2. Creates registry entry with metadata (type: tool/project, paths, timestamps)
+3. Runs `git clone` into the appropriate directory (`P:\software` or `P:\software\_scripts`)
+4. Updates registry with clone status and timestamps
+5. Returns next steps (suggest creating shims if needed)
+
+**list**
+1. Loads registry from `build/registry.json`
+2. Displays registered repos with name, type, and status
+3. With `--verbose`: shows full paths, shim lists, and timestamps
+
+**shim**
+1. Validates shim name (no path separators or reserved characters)
+2. Determines registry attachment (current directory or `--repo` flag)
+3. Generates `.cmd` file in `P:\software\_scripts\_bin`
+4. Optionally wraps command with `pushd`/`popd` if `--cwd` specified
+5. Updates registry entry's shim list
+6. Makes shim globally accessible (assumes `_bin` is in PATH)
+
+**uninstall**
+1. Finds registry entry by name
+2. Confirms deletion (unless `--yes`)
+3. Removes all associated shims from `P:\software\_scripts\_bin`
+4. Deletes the repository directory
+5. Removes registry entry
+6. Reports cleanup results
+
+### Registry System
+
+Lifecycle management uses a JSON registry at `build/registry.json` to track all cloned repos and their associated shims. Each entry includes:
+
+- `id` — unique identifier
+- `name` — repo name (used for commands)
+- `type` — "tool" or "project"
+- `repo_path` — absolute path to the cloned repository
+- `shims` — array of shim file paths
+- `created_at` — ISO 8601 timestamp
+- `updated_at` — ISO 8601 timestamp
+
+The registry enables:
+- Tracking which repos have been cloned
+- Associating shims with their parent repos
+- Safe cleanup during uninstall (removes repo + all shims)
+- Quick listing of all managed repos
+
+### Known Limitations
+
+**PowerShell Parameter Binding**: When using `strap shim`, single-letter flags in the command (like `python -m module`) may conflict with PowerShell's parameter matching. If you encounter errors, try:
+- Using full parameter names instead of short flags
+- Alternative command syntax that avoids single-letter flags
+- Wrapping the command in a dedicated script and shimming the script instead
 
 ## Doctor
 
@@ -173,7 +325,12 @@ templates/node-ts-service/  # service template
 templates/node-ts-web/      # web template
 templates/python/           # python template
 templates/mono/             # monorepo template
-build/                      # bootstrap scripts + context-hook
+build/
+  strap.ps1                 # main script (bootstrapping + lifecycle)
+  strap.cmd                 # entry point
+  context-hook.cmd          # context gathering hook
+  registry.json             # lifecycle management registry
+test-*.ps1                  # test suites for each command
 ```
 
 ## Skills

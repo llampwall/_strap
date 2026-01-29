@@ -26,6 +26,21 @@ param(
   [switch] $Force,
   [switch] $AllowDirty,
 
+  [switch] $Tool,
+  [string] $Name,
+  [string] $Dest,
+
+  [switch] $Software,
+  [switch] $Json,
+
+  [switch] $Yes,
+  [switch] $DryRun,
+  [switch] $KeepFolder,
+  [switch] $KeepShims,
+
+  [string] $Cwd,
+  [string] $Repo,
+
   [Parameter(ValueFromRemainingArguments=$true)]
   [string[]] $ExtraArgs
 )
@@ -59,6 +74,17 @@ function Apply-ExtraArgs {
       "--push" { $script:Push = $true; continue }
       "--force" { $script:Force = $true; continue }
       "--allow-dirty" { $script:AllowDirty = $true; continue }
+      "--tool" { $script:Tool = $true; continue }
+      "--name" { if ($i + 1 -lt $ArgsList.Count) { $script:Name = $ArgsList[$i + 1]; $i++; continue } }
+      "--dest" { if ($i + 1 -lt $ArgsList.Count) { $script:Dest = $ArgsList[$i + 1]; $i++; continue } }
+      "--software" { $script:Software = $true; continue }
+      "--json" { $script:Json = $true; continue }
+      "--yes" { $script:Yes = $true; continue }
+      "--dry-run" { $script:DryRun = $true; continue }
+      "--keep-folder" { $script:KeepFolder = $true; continue }
+      "--keep-shims" { $script:KeepShims = $true; continue }
+      "--cwd" { if ($i + 1 -lt $ArgsList.Count) { $script:Cwd = $ArgsList[$i + 1]; $i++; continue } }
+      "--repo" { if ($i + 1 -lt $ArgsList.Count) { $script:Repo = $ArgsList[$i + 1]; $i++; continue } }
       default { }
     }
   }
@@ -73,6 +99,10 @@ function Show-Help {
   @"
 strap usage:
   strap <project-name> -t <template> [-p <parent-dir>] [--skip-install] [--install] [--start]
+  strap clone <git-url> [--tool] [--name <name>] [--dest <dir>]
+  strap list [--tool] [--software] [--json]
+  strap uninstall <name> [--yes] [--dry-run] [--keep-folder] [--keep-shims]
+  strap shim <name> --- <command...> [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
   strap doctor [--strap-root <path>] [--keep]
   strap templatize <templateName> [--source <path>] [--message "<msg>"] [--push] [--force] [--allow-dirty]
 
@@ -85,10 +115,21 @@ Flags:
   --start         full install, then start dev
   --keep          keep doctor artifacts
   --strap-root    override strap repo root
+  --tool          filter by tool scope or clone to tools directory
+  --software      filter by software scope
+  --json          output raw JSON
+  --name          custom name for cloned repo or shim
+  --dest          full destination path (overrides --tool)
+  --yes           non-interactive mode (no confirmation prompt)
+  --dry-run       show planned actions without executing
+  --keep-folder   preserve repo folder during uninstall
+  --keep-shims    preserve shims during uninstall
+  --cwd           working directory for shim execution
+  --repo          attach shim to specific registry entry
   --source        source repo for templatize
   --message       commit message for templatize
   --push          push after templatize commit
-  --force         overwrite existing template folder
+  --force         overwrite existing file/template
   --allow-dirty   allow templatize when strap repo is dirty
 "@ | Write-Host
 }
@@ -104,6 +145,91 @@ function Ensure-Command($name) {
 
 function Has-Command($name) {
   return [bool](Get-Command $name -ErrorAction SilentlyContinue)
+}
+
+function Load-Config($strapRoot) {
+  $configPath = Join-Path $strapRoot "config.json"
+  if (-not (Test-Path $configPath)) {
+    Die "Config not found: $configPath"
+  }
+  $json = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+  return $json
+}
+
+function Parse-GitUrl($url) {
+  # Extract repo name from git URL
+  # Examples:
+  #   https://github.com/user/repo.git -> repo
+  #   https://github.com/user/repo -> repo
+  #   git@github.com:user/repo.git -> repo
+  #   https://github.com/user/repo/ -> repo
+  #   https://github.com/user/repo.git?foo=bar -> repo
+
+  $url = $url.Trim()
+
+  # Remove query string if present
+  if ($url -match '\?') {
+    $url = $url.Substring(0, $url.IndexOf('?'))
+  }
+
+  # Remove trailing slashes
+  $url = $url.TrimEnd('/')
+
+  # Remove .git suffix if present
+  if ($url.EndsWith(".git")) {
+    $url = $url.Substring(0, $url.Length - 4)
+  }
+
+  # Extract last segment (handle both / and : separators for SSH URLs)
+  $segments = $url -split '[/:]'
+  $name = $segments[-1]
+
+  if (-not $name) {
+    Die "Could not parse repo name from URL: $url"
+  }
+
+  return $name
+}
+
+function Load-Registry($configObj) {
+  $registryPath = $configObj.registry
+  if (-not (Test-Path $registryPath)) {
+    # Create empty registry if it doesn't exist
+    $parentDir = Split-Path $registryPath -Parent
+    if (-not (Test-Path $parentDir)) {
+      New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
+    }
+    "[]" | Set-Content -LiteralPath $registryPath -NoNewline
+    return @()
+  }
+  $content = Get-Content -LiteralPath $registryPath -Raw
+  if ($content.Trim() -eq "[]") {
+    return @()
+  }
+  $json = $content | ConvertFrom-Json
+  # Ensure we return an array even if there's only one item
+  if ($json -is [System.Array]) {
+    return @($json)
+  } else {
+    return @($json)
+  }
+}
+
+function Save-Registry($configObj, $entries) {
+  $registryPath = $configObj.registry
+  $tmpPath = "$registryPath.tmp"
+
+  # Write to temp file first
+  # Handle empty array case explicitly
+  if ($entries.Count -eq 0) {
+    $json = "[]"
+  } else {
+    $json = $entries | ConvertTo-Json -Depth 10
+  }
+  [System.IO.File]::WriteAllText($tmpPath, $json, (New-Object System.Text.UTF8Encoding($false)))
+
+  # Atomic move (overwrites destination)
+  Move-Item -LiteralPath $tmpPath -Destination $registryPath -Force
 }
 
 function Copy-TemplateDir($src, $dest) {
@@ -367,6 +493,534 @@ function Copy-RepoSnapshot($src, $dest) {
   return $true
 }
 
+function Invoke-Clone {
+  param(
+    [string] $GitUrl,
+    [string] $CustomName,
+    [string] $DestPath,
+    [switch] $IsTool,
+    [string] $StrapRootPath
+  )
+
+  Ensure-Command git
+
+  if (-not $GitUrl) { Die "clone requires a git URL" }
+
+  # Load config
+  $config = Load-Config $StrapRootPath
+
+  # Parse repo name from URL
+  $repoName = if ($CustomName) { $CustomName } else { Parse-GitUrl $GitUrl }
+
+  # Determine destination
+  $destPath = if ($DestPath) {
+    $DestPath
+  } elseif ($IsTool) {
+    Join-Path $config.roots.tools $repoName
+  } else {
+    Join-Path $config.roots.software $repoName
+  }
+
+  # Check if destination already exists
+  if (Test-Path $destPath) {
+    Die "Destination already exists: $destPath"
+  }
+
+  # Load registry and check for duplicate name BEFORE cloning
+  $registry = Load-Registry $config
+  $existing = $registry | Where-Object { $_.name -eq $repoName }
+  if ($existing) {
+    Die "Entry with name '$repoName' already exists in registry at $($existing.path). Use --name to specify a different name."
+  }
+
+  Info "Cloning $GitUrl -> $destPath"
+
+  # Clone the repo (capture output for error reporting)
+  $gitOutput = & git clone $GitUrl $destPath 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    Write-Host "Git clone failed with output:"
+    Write-Host $gitOutput
+    Die "Git clone failed"
+  }
+
+  Ok "Cloned to $destPath"
+
+  # Resolve to absolute path for registry
+  $absolutePath = (Resolve-Path -LiteralPath $destPath).Path
+
+  # Create new entry with ID
+  $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+  $entry = [PSCustomObject]@{
+    id         = $repoName
+    name       = $repoName
+    url        = $GitUrl
+    path       = $absolutePath
+    scope      = if ($IsTool) { "tool" } else { "software" }
+    shims      = @()
+    stack      = @()
+    created_at = $timestamp
+    updated_at = $timestamp
+  }
+
+  # Add to registry
+  $newRegistry = @()
+  foreach ($item in $registry) {
+    $newRegistry += $item
+  }
+  $newRegistry += $entry
+  Save-Registry $config $newRegistry
+
+  Ok "Added to registry"
+
+  # TODO: Offer to run setup / create shim
+  Info "Next steps:"
+  Info "  cd $absolutePath"
+  Info "  strap setup (to install dependencies)"
+  Info "  strap shim <name> -- <command> (to create a launcher)"
+}
+
+function Invoke-List {
+  param(
+    [switch] $FilterTool,
+    [switch] $FilterSoftware,
+    [switch] $OutputJson,
+    [string] $StrapRootPath
+  )
+
+  # Load config and registry
+  $config = Load-Config $StrapRootPath
+  $registry = Load-Registry $config
+
+  # Apply filters
+  $filtered = $registry
+  if ($FilterTool) {
+    $filtered = $filtered | Where-Object { $_.scope -eq "tool" }
+  }
+  if ($FilterSoftware) {
+    $filtered = $filtered | Where-Object { $_.scope -eq "software" }
+  }
+
+  # Output
+  if ($OutputJson) {
+    $json = $filtered | ConvertTo-Json -Depth 10
+    Write-Host $json
+  } else {
+    if ($filtered.Count -eq 0) {
+      Info "No entries found"
+      return
+    }
+
+    # Format as table
+    Write-Host ""
+    Write-Host ("NAME" + (" " * 20) + "SCOPE" + (" " * 5) + "PATH" + (" " * 40) + "URL" + (" " * 40) + "UPDATED")
+    Write-Host ("-" * 150)
+
+    foreach ($entry in $filtered) {
+      $name = if ($entry.name.Length -gt 20) { $entry.name.Substring(0, 17) + "..." } else { $entry.name.PadRight(24) }
+      $scope = $entry.scope.PadRight(10)
+      $path = if ($entry.path.Length -gt 40) { "..." + $entry.path.Substring($entry.path.Length - 37) } else { $entry.path.PadRight(44) }
+      $url = if ($entry.url.Length -gt 40) { $entry.url.Substring(0, 37) + "..." } else { $entry.url.PadRight(44) }
+      $updated = if ($entry.updated_at) { $entry.updated_at } else { "N/A" }
+
+      Write-Host "$name$scope$path$url$updated"
+    }
+    Write-Host ""
+    Write-Host "Total: $($filtered.Count) entries"
+  }
+}
+
+function Invoke-Uninstall {
+  param(
+    [string] $NameToRemove,
+    [switch] $NonInteractive,
+    [switch] $DryRunMode,
+    [switch] $PreserveFolder,
+    [switch] $PreserveShims,
+    [string] $StrapRootPath
+  )
+
+  if (-not $NameToRemove) { Die "uninstall requires <name>" }
+
+  # Load config and registry
+  $config = Load-Config $StrapRootPath
+  $registry = Load-Registry $config
+
+  # Find entry by name
+  $entry = $registry | Where-Object { $_.name -eq $NameToRemove }
+  if (-not $entry) {
+    Die "No entry found with name '$NameToRemove'. Use 'strap list' to see all entries."
+  }
+
+  # Safety validation - check managed roots
+  $softwareRoot = $config.roots.software
+  $toolsRoot = $config.roots.tools
+  $shimsRoot = $config.roots.shims
+
+  # Validate repo path
+  $repoPath = $entry.path
+  if (-not $repoPath) {
+    Die "Registry entry has no path field"
+  }
+
+  # Check that path is within managed roots
+  $pathIsManaged = $repoPath.StartsWith($softwareRoot, [StringComparison]::OrdinalIgnoreCase) -or
+                   $repoPath.StartsWith($toolsRoot, [StringComparison]::OrdinalIgnoreCase)
+
+  if (-not $pathIsManaged) {
+    Die "Path is not within managed roots: $repoPath"
+  }
+
+  # Disallow deleting the root directories themselves
+  if ($repoPath -eq $softwareRoot -or $repoPath -eq $toolsRoot) {
+    Die "Cannot delete root directory: $repoPath"
+  }
+
+  # Validate shim paths
+  $shimsToDelete = @()
+  if (-not $PreserveShims -and $entry.shims) {
+    foreach ($shim in $entry.shims) {
+      # Must be absolute
+      if (-not [System.IO.Path]::IsPathRooted($shim)) {
+        Die "Shim path is not absolute: $shim"
+      }
+
+      # Must be within shims root
+      if (-not $shim.StartsWith($shimsRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        Die "Shim path is not within shims root: $shim"
+      }
+
+      # Must not be the root directory itself
+      if ($shim -eq $shimsRoot) {
+        Die "Cannot delete shims root directory: $shim"
+      }
+
+      # Must be a file path (ends with .cmd, .ps1, etc., not a directory)
+      if (Test-Path $shim) {
+        $item = Get-Item -LiteralPath $shim
+        if ($item.PSIsContainer) {
+          Die "Shim path is a directory, not a file: $shim"
+        }
+      }
+
+      $shimsToDelete += $shim
+    }
+  }
+
+  # Preview
+  Write-Host ""
+  Write-Host "=== UNINSTALL PREVIEW ===" -ForegroundColor Cyan
+  Write-Host "Entry:  $($entry.name) ($($entry.scope))"
+  if ($entry.url) {
+    Write-Host "URL:    $($entry.url)"
+  }
+  Write-Host "Path:   $repoPath"
+
+  if ($shimsToDelete.Count -gt 0) {
+    Write-Host ""
+    Write-Host "Will remove shims:" -ForegroundColor Yellow
+    foreach ($shim in $shimsToDelete) {
+      Write-Host "  - $shim"
+    }
+  } elseif ($PreserveShims -and $entry.shims -and $entry.shims.Count -gt 0) {
+    Write-Host ""
+    Write-Host "Will keep shims (--keep-shims):" -ForegroundColor Green
+    foreach ($shim in $entry.shims) {
+      Write-Host "  - $shim"
+    }
+  }
+
+  if (-not $PreserveFolder) {
+    Write-Host ""
+    Write-Host "Will remove folder:" -ForegroundColor Yellow
+    Write-Host "  - $repoPath"
+  } else {
+    Write-Host ""
+    Write-Host "Will keep folder (--keep-folder):" -ForegroundColor Green
+    Write-Host "  - $repoPath"
+  }
+
+  Write-Host ""
+  Write-Host "Will remove registry entry: $($entry.name)" -ForegroundColor Yellow
+
+  if ($DryRunMode) {
+    Write-Host ""
+    Write-Host "DRY RUN - no changes will be made" -ForegroundColor Cyan
+    return
+  }
+
+  # Confirmation
+  if (-not $NonInteractive) {
+    Write-Host ""
+    $response = Read-Host "Proceed? (y/n)"
+    if ($response -ne "y") {
+      Info "Aborted by user"
+      exit 1
+    }
+  }
+
+  Write-Host ""
+
+  # Execute deletions
+  # 1. Remove shims
+  if ($shimsToDelete.Count -gt 0) {
+    Info "Removing shims..."
+    foreach ($shim in $shimsToDelete) {
+      if (-not (Test-Path $shim)) {
+        Write-Host "  skip (not found): $shim" -ForegroundColor Gray
+      } else {
+        try {
+          Remove-Item -LiteralPath $shim -Force -ErrorAction Stop
+          Write-Host "  deleted: $shim" -ForegroundColor Green
+        } catch {
+          Write-Host "  ERROR deleting $shim : $_" -ForegroundColor Red
+          Die "Failed to delete shim: $shim"
+        }
+      }
+    }
+  }
+
+  # 2. Remove folder
+  if (-not $PreserveFolder) {
+    Info "Removing folder..."
+    if (-not (Test-Path $repoPath)) {
+      Write-Host "  skip (not found): $repoPath" -ForegroundColor Gray
+    } else {
+      try {
+        Remove-Item -LiteralPath $repoPath -Recurse -Force -ErrorAction Stop
+        Write-Host "  deleted: $repoPath" -ForegroundColor Green
+      } catch {
+        Write-Host "  ERROR deleting $repoPath : $_" -ForegroundColor Red
+        Die "Failed to delete folder: $repoPath"
+      }
+    }
+  }
+
+  # 3. Remove registry entry
+  Info "Updating registry..."
+  $newRegistry = @()
+  foreach ($item in $registry) {
+    if ($item.name -ne $NameToRemove) {
+      $newRegistry += $item
+    }
+  }
+
+  try {
+    Save-Registry $config $newRegistry
+    Ok "Registry updated"
+  } catch {
+    Write-Host "ERROR updating registry: $_" -ForegroundColor Red
+    exit 3
+  }
+
+  Write-Host ""
+  Ok "Uninstalled '$NameToRemove'"
+}
+
+function Invoke-Shim {
+  param(
+    [string] $ShimName,
+    [string[]] $CommandArgs,
+    [string] $WorkingDir,
+    [string] $RegistryEntryName,
+    [switch] $ForceOverwrite,
+    [switch] $DryRunMode,
+    [switch] $NonInteractive,
+    [string] $StrapRootPath
+  )
+
+  if (-not $ShimName) { Die "shim requires <name>" }
+  if (-not $CommandArgs -or $CommandArgs.Count -eq 0) { Die "shim requires --- <command...> (use three dashes before command)" }
+
+  # Validate shim name (no path separators or reserved chars)
+  if ($ShimName -match '[\\/:*?"<>|]') {
+    Die "Invalid shim name: '$ShimName' (contains path separators or reserved characters)"
+  }
+
+  # Normalize name (trim, replace spaces with -)
+  $ShimName = $ShimName.Trim() -replace '\s+', '-'
+
+  # Load config
+  $config = Load-Config $StrapRootPath
+  $shimsRoot = $config.roots.shims
+
+  # Determine shim path
+  $shimPath = Join-Path $shimsRoot "$ShimName.cmd"
+  $shimPathResolved = [System.IO.Path]::GetFullPath($shimPath)
+
+  # Safety: ensure shimPath is within shimsRoot
+  $shimsRootResolved = [System.IO.Path]::GetFullPath($shimsRoot)
+  if (-not $shimPathResolved.StartsWith($shimsRootResolved, [StringComparison]::OrdinalIgnoreCase)) {
+    Die "Shim path is not within shims root: $shimPathResolved"
+  }
+
+  # Load registry
+  $registry = Load-Registry $config
+
+  # Determine registry attachment
+  $attachedEntry = $null
+
+  if ($RegistryEntryName) {
+    # User specified --repo
+    $attachedEntry = $registry | Where-Object { $_.name -eq $RegistryEntryName }
+    if (-not $attachedEntry) {
+      Die "Registry entry not found: '$RegistryEntryName'. Use 'strap list' to see all entries."
+    }
+  } else {
+    # Try to match current directory to a registry entry
+    $currentDir = (Get-Location).Path
+    $currentDirResolved = [System.IO.Path]::GetFullPath($currentDir)
+
+    foreach ($entry in $registry) {
+      $entryPathResolved = [System.IO.Path]::GetFullPath($entry.path)
+
+      # Check if current dir equals or is inside entry path
+      if ($currentDirResolved -eq $entryPathResolved -or
+          $currentDirResolved.StartsWith("$entryPathResolved\", [StringComparison]::OrdinalIgnoreCase)) {
+        $attachedEntry = $entry
+        break
+      }
+    }
+
+    if (-not $attachedEntry) {
+      Die "No registry entry found for current directory. Run from inside a registered repo or use --repo <name>."
+    }
+  }
+
+  # Join command args into a single string
+  $commandLine = $CommandArgs -join ' '
+
+  # Preview
+  Write-Host ""
+  Write-Host "=== SHIM PREVIEW ===" -ForegroundColor Cyan
+  Write-Host "Shim name:      $ShimName"
+  Write-Host "Shim path:      $shimPathResolved"
+  Write-Host "Attached repo:  $($attachedEntry.name) ($($attachedEntry.scope))"
+  Write-Host "Repo path:      $($attachedEntry.path)"
+  Write-Host "Command:        $commandLine"
+  if ($WorkingDir) {
+    Write-Host "Working dir:    $WorkingDir"
+  }
+
+  # Check if shim already exists
+  if (Test-Path $shimPathResolved) {
+    if (-not $ForceOverwrite) {
+      Write-Host ""
+      Write-Host "Shim already exists at: $shimPathResolved" -ForegroundColor Yellow
+      Die "Use --force to overwrite"
+    }
+    Write-Host ""
+    Write-Host "Will overwrite existing shim (--force)" -ForegroundColor Yellow
+  }
+
+  if ($DryRunMode) {
+    Write-Host ""
+    Write-Host "DRY RUN - no changes will be made" -ForegroundColor Cyan
+    return
+  }
+
+  # Confirmation
+  if (-not $NonInteractive) {
+    Write-Host ""
+    $response = Read-Host "Proceed? (y/n)"
+    if ($response -ne "y") {
+      Info "Aborted by user"
+      exit 1
+    }
+  }
+
+  Write-Host ""
+
+  # Generate shim content
+  $shimContent = @"
+@echo off
+setlocal
+
+"@
+
+  if ($WorkingDir) {
+    $shimContent += @"
+pushd "$WorkingDir" >nul
+
+"@
+  }
+
+  $shimContent += @"
+$commandLine %*
+set "EC=%ERRORLEVEL%"
+
+"@
+
+  if ($WorkingDir) {
+    $shimContent += @"
+popd >nul
+
+"@
+  }
+
+  $shimContent += @"
+exit /b %EC%
+"@
+
+  # Write shim file
+  Info "Creating shim..."
+  try {
+    # Ensure shims directory exists
+    if (-not (Test-Path $shimsRoot)) {
+      New-Item -ItemType Directory -Path $shimsRoot -Force | Out-Null
+    }
+
+    [System.IO.File]::WriteAllText($shimPathResolved, $shimContent, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host "  created: $shimPathResolved" -ForegroundColor Green
+  } catch {
+    Write-Host "  ERROR creating shim: $_" -ForegroundColor Red
+    exit 2
+  }
+
+  # Update registry entry
+  Info "Updating registry..."
+
+  # Find the entry in the registry array (we need to work with the original array)
+  $entryIndex = -1
+  for ($i = 0; $i -lt $registry.Count; $i++) {
+    if ($registry[$i].name -eq $attachedEntry.name) {
+      $entryIndex = $i
+      break
+    }
+  }
+
+  if ($entryIndex -eq -1) {
+    Die "Internal error: could not find entry in registry after validation"
+  }
+
+  # Ensure shims array exists
+  if (-not $registry[$entryIndex].shims) {
+    $registry[$entryIndex] | Add-Member -NotePropertyName "shims" -NotePropertyValue @() -Force
+  }
+
+  # Add shim path if not already present
+  $shimsList = @($registry[$entryIndex].shims)
+  if ($shimPathResolved -notin $shimsList) {
+    $shimsList += $shimPathResolved
+    $registry[$entryIndex].shims = $shimsList
+  }
+
+  # Update timestamp
+  $registry[$entryIndex].updated_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+  # Save registry
+  try {
+    Save-Registry $config $registry
+    Ok "Registry updated"
+  } catch {
+    Write-Host "ERROR updating registry: $_" -ForegroundColor Red
+    exit 3
+  }
+
+  Write-Host ""
+  Ok "Shim created: $ShimName"
+  Info "You can now run '$ShimName' from anywhere"
+}
+
 function Invoke-Templatize {
   param(
     [string] $TemplateName,
@@ -560,6 +1214,73 @@ if ($RepoName -eq "templatize") {
 
 if ($RepoName -eq "doctor") {
   Invoke-Doctor -RootPath $TemplateRoot -KeepArtifacts:$Keep.IsPresent
+  exit 0
+}
+
+if ($RepoName -eq "clone") {
+  # Extract git URL from ExtraArgs
+  $gitUrl = $null
+  if ($ExtraArgs -and $ExtraArgs.Count -gt 0) {
+    foreach ($arg in $ExtraArgs) {
+      if ($arg -notmatch '^--') {
+        $gitUrl = $arg
+        break
+      }
+    }
+  }
+  Invoke-Clone -GitUrl $gitUrl -CustomName $Name -DestPath $Dest -IsTool:$Tool.IsPresent -StrapRootPath $TemplateRoot
+  exit 0
+}
+
+if ($RepoName -eq "list") {
+  Invoke-List -FilterTool:$Tool.IsPresent -FilterSoftware:$Software.IsPresent -OutputJson:$Json.IsPresent -StrapRootPath $TemplateRoot
+  exit 0
+}
+
+if ($RepoName -eq "uninstall") {
+  # Extract name from ExtraArgs
+  $nameToRemove = $null
+  if ($ExtraArgs -and $ExtraArgs.Count -gt 0) {
+    foreach ($arg in $ExtraArgs) {
+      if ($arg -notmatch '^--') {
+        $nameToRemove = $arg
+        break
+      }
+    }
+  }
+  Invoke-Uninstall -NameToRemove $nameToRemove -NonInteractive:$Yes.IsPresent -DryRunMode:$DryRun.IsPresent -PreserveFolder:$KeepFolder.IsPresent -PreserveShims:$KeepShims.IsPresent -StrapRootPath $TemplateRoot
+  exit 0
+}
+
+if ($RepoName -eq "shim") {
+  # Extract shim name and command args from ExtraArgs
+  # Format: strap shim <name> --- <command...>
+  # Note: using --- (three dashes) instead of -- to avoid PowerShell parameter binding conflicts
+  $shimName = $null
+  $commandArgs = @()
+  $foundSeparator = $false
+
+  if ($ExtraArgs -and $ExtraArgs.Count -gt 0) {
+    for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
+      $arg = $ExtraArgs[$i]
+
+      if ($arg -eq "---" -or $arg -eq "--") {
+        $foundSeparator = $true
+        # Everything after --- is the command
+        if ($i + 1 -lt $ExtraArgs.Count) {
+          $commandArgs = $ExtraArgs[($i + 1)..($ExtraArgs.Count - 1)]
+        }
+        break
+      }
+
+      # Before ---, look for the shim name (first non-flag arg)
+      if (-not $foundSeparator -and $arg -notmatch '^--' -and -not $shimName) {
+        $shimName = $arg
+      }
+    }
+  }
+
+  Invoke-Shim -ShimName $shimName -CommandArgs $commandArgs -WorkingDir $Cwd -RegistryEntryName $Repo -ForceOverwrite:$Force.IsPresent -DryRunMode:$DryRun.IsPresent -NonInteractive:$Yes.IsPresent -StrapRootPath $TemplateRoot
   exit 0
 }
 
