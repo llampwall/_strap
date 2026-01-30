@@ -8,6 +8,7 @@ Complete Windows dev environment manager with two halves:
 - Clone GitHub repos and track them in a central registry
 - Install deps safely with stack auto-detection (python/node/go/rust)
 - Create global `.cmd` shims for any command (no manual PATH edits)
+- Move and rename repos while keeping registry consistent
 - Update all your tools at once (`--all` flag)
 - Uninstall cleanly (removes folder + shims + registry entry)
 - Schema versioning means it won't brick itself as it evolves
@@ -81,6 +82,8 @@ strap templatize <templateName> [--source <path>] [--message "<msg>"] [--push] [
 strap clone <github-url> [--tool] [--name <custom-name>] [--yes]
 strap list [--verbose]
 strap open <name>
+strap move <name> --dest <path> [--yes] [--dry-run] [--force] [--rehome-shims]
+strap rename <name> --to <newName> [--yes] [--dry-run] [--move-folder] [--force]
 strap adopt [--path <dir>] [--name <name>] [--tool|--software] [--yes] [--dry-run]
 strap setup [--yes] [--dry-run] [--stack python|node|go|rust] [--repo <name>]
 strap setup [--venv <path>] [--uv] [--python <exe>] [--pm npm|pnpm|yarn] [--corepack]
@@ -115,6 +118,22 @@ strap migrate [--yes] [--dry-run] [--backup] [--json] [--to <version>] [--plan]
 
 **list**
 - `--verbose` — show full details including paths, types, shims, and timestamps
+
+**move**
+- `<name>` — registry entry name to move
+- `--dest <path>` — destination path (if ends with `\` or is existing dir, keeps folder name; otherwise full new path)
+- `--yes` — skip confirmation prompts
+- `--dry-run` — preview only, no filesystem changes
+- `--force` — allow overwriting existing destination (only if empty)
+- `--rehome-shims` — update shim content to reference new repo path
+
+**rename**
+- `<name>` — registry entry name to rename
+- `--to <newName>` — new registry name
+- `--yes` — skip confirmation prompts
+- `--dry-run` — preview only, no changes
+- `--move-folder` — also rename folder on disk to match new name
+- `--force` — reserved for future use
 
 **adopt**
 - `--path <dir>` — path to existing repo (default: current directory)
@@ -210,6 +229,21 @@ strap list --verbose
 
 # Open repo folder in File Explorer
 strap open my-project
+
+# Move a repo to a new location
+strap move my-project --dest P:\software\projects\ --yes
+
+# Move and rename in one step
+strap move cli-tool --dest P:\software\_scripts\cli-tool-renamed --yes
+
+# Move with shim path updates (dry run first)
+strap move my-tool --dest P:\software\_tools\ --rehome-shims --dry-run
+
+# Rename a registry entry only
+strap rename old-name --to new-name --yes
+
+# Rename entry and folder on disk
+strap rename youtube-md --to youtube-markdown --move-folder --yes
 
 # Adopt an existing repo (current directory)
 cd P:\software\existing-repo
@@ -328,6 +362,8 @@ Strap has two modes:
 - `setup`: detect stack and run an allowlisted install plan (python/node/go/rust; docker = detect only)
 - `shim`: generate a `.cmd` launcher in your shims dir and attach it to the registry entry
 - `update`: pull latest changes (single or `--all`, supports `--rebase`, `--stash`, optional `--setup`)
+- `move`: relocate a managed repo to a new path while keeping registry consistent
+- `rename`: change a registry entry name (optionally rename folder on disk)
 - `uninstall`: remove shims + folder + registry entry
 - `list`: show all registered repos
 - `open`: open a registered repo's folder in File Explorer
@@ -374,6 +410,123 @@ strap shim flask --- python -m flask run
 ```
 
 The `--cmd` mode passes the entire command as a quoted string, preventing PowerShell from parsing individual flags.
+
+## Move
+
+`strap move` relocates a managed repository folder to a new location while keeping the registry consistent. This is useful for reorganizing your workspace or moving repos between the software and tools directories.
+
+**How it works:**
+1. Validates the source path exists and is inside a managed root (`software_root` or `tools_root`)
+2. Computes the destination path:
+   - If `--dest` ends with `\` or points to an existing directory, treats it as the parent directory and keeps the original folder name
+   - Otherwise, treats `--dest` as the full new path (allowing rename during move)
+3. Validates the destination is also inside a managed root
+4. Shows a preview of the planned move
+5. Moves the folder using PowerShell `Move-Item`
+6. Updates the registry entry's `path` field
+7. Optionally updates `scope` if moving between software/tools roots
+8. Optionally updates shim content to reference the new path (with `--rehome-shims`)
+
+**Safety features:**
+- Refuses to move repos outside managed roots
+- Refuses to move to root directories themselves
+- Requires `--force` to overwrite existing destinations (and only if they're empty)
+- Validates all paths before making changes
+- Supports `--dry-run` to preview without executing
+- Atomic registry updates (only saves if move succeeds)
+
+**Common use cases:**
+
+```powershell
+# Move to a new parent directory (keeps folder name)
+strap move my-project --dest P:\software\projects\ --yes
+
+# Move and rename in one step
+strap move cli-tool --dest P:\software\_scripts\renamed-tool --yes
+
+# Move between roots (software -> tools)
+strap move utility --dest P:\software\_scripts\ --yes
+
+# Update shim content if it contains absolute paths
+strap move my-tool --dest P:\software\_tools\ --rehome-shims --yes
+
+# Preview before executing
+strap move my-project --dest P:\software\archived\ --dry-run
+```
+
+**Flags:**
+- `--dest <path>` — destination directory or full path (required)
+- `--yes` — skip confirmation prompt
+- `--dry-run` — show preview without making changes
+- `--force` — allow overwriting existing destination (only if empty)
+- `--rehome-shims` — update shim file content to reference new repo path
+
+**Notes:**
+- The `--rehome-shims` flag performs simple string replacement of the old path with the new path in shim files
+- It only updates shims that contain the old path in their content
+- Most shims execute commands relative to the repo or use absolute paths from environment variables, so this flag is rarely needed
+- The registry is saved atomically only after the move succeeds
+
+## Rename
+
+`strap rename` changes the registry name of a managed repo. Optionally, it can also rename the folder on disk to match.
+
+**How it works:**
+1. Validates the new name doesn't contain invalid filesystem characters (`\/:*?"<>|`)
+2. Checks the new name isn't already used by another registry entry
+3. Shows a preview of the planned rename
+4. Updates the registry entry's `name` field
+5. If the `id` field matches the old name, updates it to the new name (follows id=name convention)
+6. Optionally renames the folder on disk (with `--move-folder`)
+7. Updates the `updated_at` timestamp
+
+**Safety features:**
+- Validates new name against filesystem reserved characters
+- Prevents duplicate names in registry
+- Refuses to rename folder if destination already exists
+- Validates paths remain inside managed roots
+- Supports `--dry-run` to preview without executing
+- Atomic registry updates
+
+**Common use cases:**
+
+```powershell
+# Rename registry entry only (folder stays the same)
+strap rename old-name --to new-name --yes
+
+# Rename both registry entry and folder
+strap rename youtube-md --to youtube-markdown --move-folder --yes
+
+# Preview before executing
+strap rename myproject --to my-project --move-folder --dry-run
+```
+
+**Flags:**
+- `--to <newName>` — new registry name (required)
+- `--yes` — skip confirmation prompt
+- `--dry-run` — show preview without making changes
+- `--move-folder` — also rename the folder on disk to match new name
+- `--force` — reserved for future use
+
+**Use cases:**
+
+**Registry-only rename** (default):
+- Fix typos in the registry name
+- Use a better command-friendly name for shims
+- Standardize naming conventions across your tools
+- The folder path remains unchanged
+
+**Rename with folder** (`--move-folder`):
+- Keep registry name and folder name in sync
+- Standardize folder naming across your workspace
+- Fix naming inconsistencies after adopting an existing repo
+
+**Notes:**
+- Renaming only affects the registry entry name used in `strap` commands
+- Existing shims continue to work (they reference the repo path, not the name)
+- Git remote URLs and commit history are unaffected
+- The `id` field is updated automatically if it follows the id=name convention
+- Combining rename + move operations: use `strap rename --move-folder` to change both name and folder, or use `strap move` with a destination that includes a new folder name
 
 ## Doctor
 

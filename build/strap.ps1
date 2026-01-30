@@ -60,6 +60,10 @@ param(
   [switch] $Plan,
   [switch] $Backup,
 
+  [switch] $RehomeShims,
+  [switch] $MoveFolder,
+  [string] $NewName,
+
   [Parameter(ValueFromRemainingArguments=$true)]
   [string[]] $ExtraArgs
 )
@@ -118,6 +122,8 @@ function Apply-ExtraArgs {
       "--to" { if ($i + 1 -lt $ArgsList.Count) { $script:To = [int]$ArgsList[$i + 1]; $i++; continue } }
       "--plan" { $script:Plan = $true; continue }
       "--backup" { $script:Backup = $true; continue }
+      "--rehome-shims" { $script:RehomeShims = $true; continue }
+      "--move-folder" { $script:MoveFolder = $true; continue }
       default { }
     }
   }
@@ -135,6 +141,8 @@ strap usage:
   strap clone <git-url> [--tool] [--name <name>] [--dest <dir>]
   strap list [--tool] [--software] [--json]
   strap open <name>
+  strap move <name> --dest <path> [--yes] [--dry-run] [--force] [--rehome-shims]
+  strap rename <name> --to <newName> [--yes] [--dry-run] [--move-folder] [--force]
   strap adopt [--path <dir>] [--name <name>] [--tool|--software] [--yes] [--dry-run]
   strap setup [--yes] [--dry-run] [--stack python|node|go|rust] [--repo <name>]
   strap setup [--venv <path>] [--uv] [--python <exe>] [--pm npm|pnpm|yarn] [--corepack]
@@ -181,8 +189,11 @@ Flags:
   --source        source repo for templatize
   --message       commit message for templatize
   --push          push after templatize commit
-  --force         overwrite existing file/template
+  --force         overwrite existing file/template (or allow unsafe move/rename)
   --allow-dirty   allow templatize when strap repo is dirty
+  --rehome-shims  update shim content with new repo path (move only)
+  --move-folder   also rename folder on disk (rename only)
+  --to            new name for rename command
 "@ | Write-Host
 }
 
@@ -868,6 +879,299 @@ function Invoke-Open {
 
   Info "Opening: $repoPath"
   & explorer.exe $repoPath
+}
+
+function Invoke-Move {
+  param(
+    [string] $NameToMove,
+    [string] $DestPath,
+    [switch] $NonInteractive,
+    [switch] $DryRunMode,
+    [switch] $ForceOverwrite,
+    [switch] $RehomeShims,
+    [string] $StrapRootPath
+  )
+
+  if (-not $NameToMove) { Die "move requires <name>" }
+  if (-not $DestPath) { Die "move requires --dest <path>" }
+
+  # Load config and registry
+  $config = Load-Config $StrapRootPath
+  $registry = Load-Registry $config
+  $softwareRoot = $config.roots.software
+  $toolsRoot = $config.roots.tools
+
+  # Find entry by name
+  $entry = $registry | Where-Object { $_.name -eq $NameToMove }
+  if (-not $entry) {
+    Die "No entry found with name '$NameToMove'. Use 'strap list' to see all entries."
+  }
+
+  $oldPath = $entry.path
+  if (-not $oldPath) {
+    Die "Registry entry has no path field"
+  }
+
+  # Validate source is absolute and inside managed roots
+  if (-not [System.IO.Path]::IsPathRooted($oldPath)) {
+    Die "Source path is not absolute: $oldPath"
+  }
+
+  $oldPathIsManaged = $oldPath.StartsWith($softwareRoot, [StringComparison]::OrdinalIgnoreCase) -or
+                      $oldPath.StartsWith($toolsRoot, [StringComparison]::OrdinalIgnoreCase)
+
+  if (-not $oldPathIsManaged) {
+    Die "Source path is not within managed roots: $oldPath"
+  }
+
+  if (-not (Test-Path $oldPath)) {
+    Die "Source folder does not exist: $oldPath"
+  }
+
+  # Compute new path
+  $newPath = $null
+  $destResolved = [System.IO.Path]::GetFullPath($DestPath)
+
+  # If dest ends with \ or exists as directory, treat as parent
+  if ($destResolved.EndsWith([System.IO.Path]::DirectorySeparatorChar) -or (Test-Path $destResolved -PathType Container)) {
+    $folderName = Split-Path $oldPath -Leaf
+    $newPath = Join-Path $destResolved $folderName
+  } else {
+    $newPath = $destResolved
+  }
+
+  # Validate new path is inside managed roots
+  $newPathIsManaged = $newPath.StartsWith($softwareRoot, [StringComparison]::OrdinalIgnoreCase) -or
+                      $newPath.StartsWith($toolsRoot, [StringComparison]::OrdinalIgnoreCase)
+
+  if (-not $newPathIsManaged) {
+    Die "Destination path is not within managed roots: $newPath"
+  }
+
+  # Reject if trying to move to root directory
+  if ($newPath -eq $softwareRoot -or $newPath -eq $toolsRoot) {
+    Die "Cannot move to root directory: $newPath"
+  }
+
+  # Check if destination exists
+  if (Test-Path $newPath) {
+    if (-not $ForceOverwrite) {
+      Die "Destination already exists: $newPath (use --force to overwrite)"
+    }
+    # With --force, check if destination is empty
+    $destItems = Get-ChildItem -LiteralPath $newPath -Force
+    if ($destItems.Count -gt 0) {
+      Die "Destination exists and is not empty: $newPath (unsafe to overwrite)"
+    }
+  }
+
+  # Plan preview
+  Write-Host ""
+  Write-Host "=== MOVE PLAN ===" -ForegroundColor Cyan
+  Write-Host "Entry: $NameToMove ($($entry.scope))"
+  Write-Host "FROM:  $oldPath"
+  Write-Host "TO:    $newPath"
+  if ($RehomeShims -and $entry.shims -and $entry.shims.Count -gt 0) {
+    Write-Host "Shims: Will update $($entry.shims.Count) shim(s) to reference new path"
+  }
+  Write-Host ""
+
+  if ($DryRunMode) {
+    Info "Dry run mode - no changes made"
+    return
+  }
+
+  # Confirmation
+  if (-not $NonInteractive) {
+    $response = Read-Host "Move $NameToMove now? (y/n)"
+    if ($response -ne 'y') {
+      Info "Move cancelled"
+      return
+    }
+  }
+
+  # Perform move
+  try {
+    Move-Item -LiteralPath $oldPath -Destination $newPath -ErrorAction Stop
+    Ok "Moved folder: $oldPath -> $newPath"
+  } catch {
+    Die "Failed to move folder: $_"
+  }
+
+  # Update registry entry
+  $entry.path = $newPath
+  $entry.updated_at = Get-Date -Format "o"
+
+  # Optional: update scope if moved between roots
+  if ($newPath.StartsWith($softwareRoot, [StringComparison]::OrdinalIgnoreCase)) {
+    $entry.scope = "software"
+  } elseif ($newPath.StartsWith($toolsRoot, [StringComparison]::OrdinalIgnoreCase)) {
+    $entry.scope = "tool"
+  }
+
+  # Optional shim rehome
+  if ($RehomeShims -and $entry.shims -and $entry.shims.Count -gt 0) {
+    $shimsUpdated = 0
+    foreach ($shimPath in $entry.shims) {
+      if (-not (Test-Path $shimPath)) {
+        Warn "Shim not found, skipping: $shimPath"
+        continue
+      }
+
+      try {
+        $content = Get-Content -LiteralPath $shimPath -Raw
+        if ($content -match [regex]::Escape($oldPath)) {
+          $newContent = $content -replace [regex]::Escape($oldPath), $newPath
+          Set-Content -LiteralPath $shimPath -Value $newContent -NoNewline
+          $shimsUpdated++
+        }
+      } catch {
+        Warn "Failed to update shim: $shimPath ($_)"
+      }
+    }
+    if ($shimsUpdated -gt 0) {
+      Ok "Updated $shimsUpdated shim(s)"
+    }
+  }
+
+  # Save registry
+  try {
+    Save-Registry $config $registry
+    Ok "Registry updated"
+  } catch {
+    Die "Failed to save registry: $_"
+  }
+
+  Ok "Move complete"
+}
+
+function Invoke-Rename {
+  param(
+    [string] $NameToRename,
+    [string] $NewName,
+    [switch] $NonInteractive,
+    [switch] $DryRunMode,
+    [switch] $MoveFolder,
+    [switch] $ForceOverwrite,
+    [string] $StrapRootPath
+  )
+
+  if (-not $NameToRename) { Die "rename requires <name>" }
+  if (-not $NewName) { Die "rename requires --to <newName>" }
+
+  # Load config and registry
+  $config = Load-Config $StrapRootPath
+  $registry = Load-Registry $config
+  $softwareRoot = $config.roots.software
+  $toolsRoot = $config.roots.tools
+
+  # Find entry by name
+  $entry = $registry | Where-Object { $_.name -eq $NameToRename }
+  if (-not $entry) {
+    Die "No entry found with name '$NameToRename'. Use 'strap list' to see all entries."
+  }
+
+  # Validate new name
+  if ([string]::IsNullOrWhiteSpace($NewName)) {
+    Die "New name cannot be empty"
+  }
+
+  # Check for reserved filesystem characters
+  $invalidChars = [System.IO.Path]::GetInvalidFileNameChars()
+  $reservedChars = '\/:*?"<>|'
+  foreach ($char in $reservedChars.ToCharArray()) {
+    if ($NewName.Contains($char)) {
+      Die "New name contains invalid character: $char"
+    }
+  }
+
+  # Check if new name already exists in registry
+  $existingEntry = $registry | Where-Object { $_.name -eq $NewName }
+  if ($existingEntry) {
+    Die "Registry already contains an entry named '$NewName'"
+  }
+
+  $oldPath = $entry.path
+  $newPath = $null
+
+  # Compute new path if --move-folder
+  if ($MoveFolder) {
+    if (-not $oldPath) {
+      Die "Registry entry has no path field"
+    }
+
+    $parent = Split-Path $oldPath -Parent
+    $newPath = Join-Path $parent $NewName
+
+    # Validate new path is inside managed roots
+    $newPathIsManaged = $newPath.StartsWith($softwareRoot, [StringComparison]::OrdinalIgnoreCase) -or
+                        $newPath.StartsWith($toolsRoot, [StringComparison]::OrdinalIgnoreCase)
+
+    if (-not $newPathIsManaged) {
+      Die "New path is not within managed roots: $newPath"
+    }
+
+    # Check if destination exists
+    if (Test-Path $newPath) {
+      Die "Destination folder already exists: $newPath"
+    }
+  }
+
+  # Plan preview
+  Write-Host ""
+  Write-Host "=== RENAME PLAN ===" -ForegroundColor Cyan
+  Write-Host "ENTRY: $NameToRename -> $NewName"
+  if ($MoveFolder) {
+    Write-Host "FOLDER: $oldPath -> $newPath"
+  }
+  Write-Host ""
+
+  if ($DryRunMode) {
+    Info "Dry run mode - no changes made"
+    return
+  }
+
+  # Confirmation
+  if (-not $NonInteractive) {
+    $response = Read-Host "Rename $NameToRename now? (y/n)"
+    if ($response -ne 'y') {
+      Info "Rename cancelled"
+      return
+    }
+  }
+
+  # Optional folder rename
+  if ($MoveFolder) {
+    if (-not (Test-Path $oldPath)) {
+      Die "Source folder does not exist: $oldPath"
+    }
+
+    try {
+      Move-Item -LiteralPath $oldPath -Destination $newPath -ErrorAction Stop
+      Ok "Renamed folder: $oldPath -> $newPath"
+      $entry.path = $newPath
+    } catch {
+      Die "Failed to rename folder: $_"
+    }
+  }
+
+  # Update registry entry
+  $entry.name = $NewName
+  # If id convention is id=name, also update id
+  if ($entry.id -eq $NameToRename) {
+    $entry.id = $NewName
+  }
+  $entry.updated_at = Get-Date -Format "o"
+
+  # Save registry
+  try {
+    Save-Registry $config $registry
+    Ok "Registry updated"
+  } catch {
+    Die "Failed to save registry: $_"
+  }
+
+  Ok "Rename complete"
 }
 
 function Invoke-Uninstall {
@@ -2746,6 +3050,50 @@ if ($RepoName -eq "open") {
     }
   }
   Invoke-Open -NameToOpen $nameToOpen -StrapRootPath $TemplateRoot
+  exit 0
+}
+
+if ($RepoName -eq "move") {
+  # Extract name from ExtraArgs
+  $nameToMove = $null
+  if ($ExtraArgs -and $ExtraArgs.Count -gt 0) {
+    foreach ($arg in $ExtraArgs) {
+      if ($arg -notmatch '^--') {
+        $nameToMove = $arg
+        break
+      }
+    }
+  }
+  Invoke-Move -NameToMove $nameToMove -DestPath $Dest -NonInteractive:$Yes.IsPresent -DryRunMode:$DryRun.IsPresent -ForceOverwrite:$Force.IsPresent -RehomeShims:$RehomeShims.IsPresent -StrapRootPath $TemplateRoot
+  exit 0
+}
+
+if ($RepoName -eq "rename") {
+  # Extract name from ExtraArgs
+  $nameToRename = $null
+  if ($ExtraArgs -and $ExtraArgs.Count -gt 0) {
+    foreach ($arg in $ExtraArgs) {
+      if ($arg -notmatch '^--') {
+        $nameToRename = $arg
+        break
+      }
+    }
+  }
+
+  # Extract --to value from ExtraArgs (since $To is already used as [int] for migrate)
+  $toName = $null
+  if ($NewName) {
+    $toName = $NewName
+  } elseif ($ExtraArgs -and $ExtraArgs.Count -gt 0) {
+    for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
+      if ($ExtraArgs[$i] -eq "--to" -and $i + 1 -lt $ExtraArgs.Count) {
+        $toName = $ExtraArgs[$i + 1]
+        break
+      }
+    }
+  }
+
+  Invoke-Rename -NameToRename $nameToRename -NewName $toName -NonInteractive:$Yes.IsPresent -DryRunMode:$DryRun.IsPresent -MoveFolder:$MoveFolder.IsPresent -ForceOverwrite:$Force.IsPresent -StrapRootPath $TemplateRoot
   exit 0
 }
 
