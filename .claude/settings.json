@@ -1,0 +1,7 @@
+{
+  "hooks": {
+    "startup": [
+      "chinvex brief --context strap"
+    ]
+  }
+}
