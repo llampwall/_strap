@@ -981,6 +981,197 @@ function Get-ProfileReferences {
     }
 }
 
+function Find-PathReferences {
+    <#
+    .SYNOPSIS
+    Scans repository files for hardcoded Windows path references
+
+    .PARAMETER RepoPath
+    Path to repository to scan
+
+    .OUTPUTS
+    Array of strings in format "filepath:linenum"
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string] $RepoPath
+    )
+
+    # Check if repo exists
+    if (-not (Test-Path $RepoPath)) {
+        Write-Verbose "Repository not found: $RepoPath"
+        return @()
+    }
+
+    try {
+        # Scan common file types for path references
+        $fileExtensions = @('*.ps1', '*.js', '*.ts', '*.json', '*.yml', '*.yaml', '*.md', '*.txt', '*.config')
+        $files = Get-ChildItem -Path $RepoPath -Recurse -File -Include $fileExtensions -ErrorAction SilentlyContinue
+
+        $references = @()
+
+        foreach ($file in $files) {
+            try {
+                $lineNum = 0
+                $lines = Get-Content $file.FullName -ErrorAction Stop
+
+                foreach ($line in $lines) {
+                    $lineNum++
+
+                    # Check if line contains Windows path pattern
+                    if ($line -match '[A-Za-z]:\\[^\s\r\n\"\'']+') {
+                        $references += "$($file.FullName):$lineNum"
+                    }
+                }
+            } catch {
+                Write-Verbose "Failed to read file $($file.FullName): $_"
+                continue
+            }
+        }
+
+        return $references
+
+    } catch {
+        Write-Verbose "Failed to scan repository $RepoPath`: $_"
+        return @()
+    }
+}
+
+function Build-AuditIndex {
+    <#
+    .SYNOPSIS
+    Builds or loads cached audit index of path references across all repositories
+
+    .PARAMETER IndexPath
+    Path to audit index JSON file
+
+    .PARAMETER RebuildIndex
+    Force rebuild even if cached index is fresh
+
+    .PARAMETER RegistryUpdatedAt
+    ISO8601 timestamp of registry last update
+
+    .PARAMETER Registry
+    Array of registry entries (hashtables with 'name', 'path', 'last_commit')
+
+    .OUTPUTS
+    Hashtable with audit index structure
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string] $IndexPath,
+
+        [Parameter(Mandatory)]
+        [bool] $RebuildIndex,
+
+        [Parameter(Mandatory)]
+        [string] $RegistryUpdatedAt,
+
+        [Parameter(Mandatory)]
+        [array] $Registry
+    )
+
+    # Check if existing index is fresh
+    if ((Test-Path $IndexPath) -and -not $RebuildIndex) {
+        try {
+            $existingJson = Get-Content $IndexPath -Raw | ConvertFrom-Json
+
+            # Check if cached index is still valid
+            # Note: ConvertFrom-Json converts ISO8601 strings to DateTime in local timezone
+            # We need to compare UTC times to handle timezone differences
+            $existingTime = $null
+            $inputTime = $null
+
+            if ($existingJson.registry_updated_at -is [DateTime]) {
+                $existingTime = $existingJson.registry_updated_at.ToUniversalTime()
+            } else {
+                $existingTime = ([DateTime]::Parse($existingJson.registry_updated_at)).ToUniversalTime()
+            }
+
+            $inputTime = ([DateTime]::Parse($RegistryUpdatedAt)).ToUniversalTime()
+
+            $isFresh = ($existingTime -eq $inputTime) -and
+                       ($existingJson.repo_count -eq $Registry.Count)
+
+            if ($isFresh) {
+                Write-Verbose "Using cached audit index"
+
+                # Convert PSCustomObject to hashtable for consistency
+                # Convert DateTime objects back to ISO8601 strings
+                $builtAtStr = $existingJson.built_at
+                if ($builtAtStr -is [DateTime]) {
+                    $builtAtStr = $builtAtStr.ToUniversalTime().ToString("o")
+                }
+
+                $regUpdatedAtStr = $existingJson.registry_updated_at
+                if ($regUpdatedAtStr -is [DateTime]) {
+                    $regUpdatedAtStr = $regUpdatedAtStr.ToUniversalTime().ToString("o")
+                }
+
+                $existing = @{
+                    built_at = $builtAtStr
+                    registry_updated_at = $regUpdatedAtStr
+                    repo_count = $existingJson.repo_count
+                    repos = @{}
+                }
+
+                # Convert repos object to hashtable
+                $existingJson.repos.PSObject.Properties | ForEach-Object {
+                    $repoRefs = @()
+                    if ($_.Value.references) {
+                        $repoRefs = @($_.Value.references)
+                    }
+                    $existing.repos[$_.Name] = @{
+                        references = $repoRefs
+                    }
+                }
+
+                return $existing
+            }
+        } catch {
+            Write-Verbose "Failed to read existing index, rebuilding"
+        }
+    }
+
+    # Build new index
+    Write-Host "Building audit index for $($Registry.Count) repositories..." -ForegroundColor Cyan
+
+    $repos = @{}
+    foreach ($entry in $Registry) {
+        Write-Verbose "Scanning $($entry.name) at $($entry.path)"
+
+        # Scan repo for path references
+        $references = Find-PathReferences -RepoPath $entry.path
+
+        $repos[$entry.path] = @{
+            references = $references
+        }
+    }
+
+    # Build index structure
+    $index = @{
+        built_at = (Get-Date).ToUniversalTime().ToString("o")
+        registry_updated_at = $RegistryUpdatedAt
+        repo_count = $Registry.Count
+        repos = $repos
+    }
+
+    # Write to disk
+    try {
+        $indexDir = Split-Path $IndexPath -Parent
+        if ($indexDir -and -not (Test-Path $indexDir)) {
+            New-Item -ItemType Directory -Path $indexDir -Force | Out-Null
+        }
+
+        $index | ConvertTo-Json -Depth 10 | Set-Content $IndexPath -Encoding UTF8
+        Write-Verbose "Audit index written to $IndexPath"
+    } catch {
+        Write-Warning "Failed to write audit index to disk: $_"
+    }
+
+    return $index
+}
+
 function Should-ExcludePath($fullPath, $root) {
   $rel = $fullPath.Substring($root.Length).TrimStart('\\','/')
   if (-not $rel) { return $false }
