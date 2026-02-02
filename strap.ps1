@@ -70,6 +70,38 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# ============================================================================
+# KILL SWITCH - Disabled commands pending review
+# See: docs/incidents/2026-02-02-environment-corruption.md
+# See: docs/incidents/2026-02-02-tdd-tasks-status.md
+# ============================================================================
+$UNSAFE_COMMANDS = @(
+    'Invoke-Snapshot',
+    'Invoke-Audit',
+    'Invoke-Migrate',
+    'Invoke-Migration-0-to-1',
+    'Should-ExcludePath',
+    'Copy-RepoSnapshot',
+    'Invoke-ConsolidateExecuteMove',
+    'Invoke-ConsolidateRollbackMove',
+    'Invoke-ConsolidateTransaction',
+    'Invoke-ConsolidateMigrationWorkflow',
+    'Test-ConsolidateArgs',
+    'Test-ConsolidateRegistryDisk',
+    'Test-ConsolidateEdgeCaseGuards'
+)
+
+function Assert-CommandSafe {
+    param([string]$CommandName)
+    if ($CommandName -in $UNSAFE_COMMANDS) {
+        Write-Warning "[DISABLED] '$CommandName' is disabled pending review."
+        Write-Warning "See: docs/incidents/2026-02-02-environment-corruption.md"
+        return $false
+    }
+    return $true
+}
+# ============================================================================
+
 function Die($msg) { Write-Error "❌ $msg"; exit 1 }
 function Info($msg) { Write-Host "➡️  $msg" }
 function Ok($msg) { Write-Host "✅ $msg" }
@@ -403,6 +435,7 @@ function Invoke-Migration-0-to-1 {
     [PSCustomObject] $RegistryData,
     [ref] $Report
   )
+  if (-not (Assert-CommandSafe 'Invoke-Migration-0-to-1')) { return }
 
   $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
   $entries = $RegistryData.entries
@@ -1199,6 +1232,7 @@ function Invoke-Snapshot {
         [Parameter(Mandatory)]
         [string] $StrapRootPath
     )
+    if (-not (Assert-CommandSafe 'Invoke-Snapshot')) { return }
 
     Write-Host "Capturing environment snapshot..." -ForegroundColor Cyan
 
@@ -1448,6 +1482,7 @@ function Invoke-Audit {
         [Parameter(Mandatory)]
         [string] $StrapRootPath
     )
+    if (-not (Assert-CommandSafe 'Invoke-Audit')) { return }
 
     # Load config and registry
     $config = Load-Config $StrapRootPath
@@ -1555,6 +1590,7 @@ function Invoke-Audit {
 }
 
 function Should-ExcludePath($fullPath, $root) {
+  if (-not (Assert-CommandSafe 'Should-ExcludePath')) { return $false }
   $rel = $fullPath.Substring($root.Length).TrimStart('\\','/')
   if (-not $rel) { return $false }
   if ($rel -match '(?i)^[^\\/]*\\.git(\\|/|$)') { return $true }
@@ -1564,6 +1600,7 @@ function Should-ExcludePath($fullPath, $root) {
 }
 
 function Copy-RepoSnapshot($src, $dest) {
+  if (-not (Assert-CommandSafe 'Copy-RepoSnapshot')) { return $false }
   if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path $dest | Out-Null }
   if (Has-Command robocopy) {
     $xd = @('.git','node_modules','dist','build','.turbo','.vite','.next','coverage','.pytest_cache','__pycache__','.venv','venv','.pnpm-store','pnpm-store')
@@ -3595,6 +3632,7 @@ function Invoke-Migrate {
     [switch] $OutputJson,
     [string] $StrapRootPath
   )
+  if (-not (Assert-CommandSafe 'Invoke-Migrate')) { return }
 
   # Load config
   $config = Load-Config $StrapRootPath
@@ -3878,13 +3916,14 @@ function Test-ConsolidateArgs {
     [string] $ToPath,
     [string] $TrustMode
   )
+  if (-not (Assert-CommandSafe 'Test-ConsolidateArgs')) { return }
 
   if (-not $FromPath) {
     Die "--from is required for consolidate command"
   }
 
   if ($TrustMode -ne "registry-first") {
-    Die "strap consolidate is registry-first; run 'strap doctor --fix-paths' first for disk-discovery recovery"
+    Die "strap consolidate is registry-first only; manual registry repair required for disk-discovery recovery"
   }
 
   if (-not (Test-Path -LiteralPath $FromPath)) {
@@ -3897,13 +3936,14 @@ function Test-ConsolidateRegistryDisk {
     [array] $RegisteredMoves,
     [array] $DiscoveredCandidates
   )
+  if (-not (Assert-CommandSafe 'Test-ConsolidateRegistryDisk')) { return @{ warnings = @() } }
 
   $warnings = @()
 
   # Check registry paths exist (no drift)
   foreach ($move in $RegisteredMoves) {
     if (-not (Test-Path -LiteralPath $move.registryPath)) {
-      throw "Registry path drift detected for '$($move.name)'. Run 'strap doctor --fix-paths'."
+      throw "Registry path drift detected for '$($move.name)'. Fix registry.json manually or re-adopt the repo."
     }
 
     # Check destination doesn't already exist
@@ -3934,6 +3974,7 @@ function Test-ConsolidateEdgeCaseGuards {
     [string] $LockFilePath,
     [switch] $NonInteractive
   )
+  if (-not (Assert-CommandSafe 'Test-ConsolidateEdgeCaseGuards')) { return }
 
   # Check for running process locks
   if ($LockFilePath -and (Test-Path -LiteralPath $LockFilePath)) {
@@ -3986,6 +4027,7 @@ function Invoke-ConsolidateExecuteMove {
     [string] $FromPath,
     [string] $ToPath
   )
+  if (-not (Assert-CommandSafe 'Invoke-ConsolidateExecuteMove')) { return }
 
   # Create parent directory if needed
   $parentDir = Split-Path -Parent $ToPath
@@ -4023,6 +4065,7 @@ function Invoke-ConsolidateRollbackMove {
     [string] $FromPath,
     [string] $ToPath
   )
+  if (-not (Assert-CommandSafe 'Invoke-ConsolidateRollbackMove')) { return }
 
   if (Test-Path -LiteralPath $ToPath) {
     try {
@@ -4041,6 +4084,7 @@ function Invoke-ConsolidateTransaction {
     [array] $Registry,
     [string] $StrapRootPath
   )
+  if (-not (Assert-CommandSafe 'Invoke-ConsolidateTransaction')) { return @{ success = $false; completed = @(); registry = $Registry } }
 
   $completed = @()
   $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -4164,6 +4208,7 @@ function Invoke-ConsolidateMigrationWorkflow {
     [switch] $AllowAutoArchive,
     [string] $StrapRootPath
   )
+  if (-not (Assert-CommandSafe 'Invoke-ConsolidateMigrationWorkflow')) { return @{ executed = $false; manualFixes = @() } }
 
   Write-Host "`n🔄 Starting consolidation workflow..." -ForegroundColor Cyan
   Write-Host "   From: $FromPath" -ForegroundColor Gray

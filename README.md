@@ -114,7 +114,7 @@ strap update --all [--tool] [--software] [--yes] [--dry-run] [--rebase] [--stash
 strap shim <name> --- <command...> [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
 strap shim <name> --cmd "<command>" [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
 strap uninstall <name> [--yes]
-strap doctor [--json] [--fix-paths] [--fix-orphans]
+strap doctor [--json]
 strap migrate [--yes] [--dry-run] [--backup] [--json] [--to <version>] [--plan]
 strap snapshot [--output <path>] [--scan <dir>...]
 strap audit <name|--all> [--json] [--rebuild-index]
@@ -209,8 +209,6 @@ strap consolidate --from <dir> [--to <root>] [--dry-run] [--yes] [--stop-pm2] [-
 
 **doctor**
 - `--json` — output structured JSON instead of human-readable format
-- `--fix-paths` — automatically fix registry entries with invalid paths using disk discovery
-- `--fix-orphans` — remove registry entries where the repo folder no longer exists
 
 **migrate**
 - `--yes` — skip confirmation prompts
@@ -414,12 +412,6 @@ strap consolidate --from "C:\Code" --yes --stop-pm2
 
 # Preview consolidation without executing
 strap consolidate --from "C:\Code" --dry-run
-
-# Fix registry paths that drifted
-strap doctor --fix-paths
-
-# Remove orphaned registry entries
-strap doctor --fix-orphans
 ```
 
 ## What Strap Does
@@ -454,7 +446,7 @@ Strap has two modes:
 - `uninstall`: remove shims + folder + registry entry
 - `list`: show all registered repos
 - `open`: open a registered repo's folder in File Explorer
-- `doctor`: diagnose strap + registry health (includes `--fix-paths` and `--fix-orphans` modes)
+- `doctor`: diagnose strap + registry health
 - `migrate`: upgrade registry schema safely (backfills required fields, enforces invariants)
 
 ### Consolidation workflow (migrate scattered repos)
@@ -474,7 +466,7 @@ Lifecycle management uses a JSON registry at `build/registry.json` to track all 
 - `metadata.trust_mode` — "registry-first" (default) or "disk-discovery" (recovery mode)
 
 **Trust modes:**
-- **registry-first** (default): Registry paths are assumed correct, disk is validated against registry. Commands like `move`, `rename`, `archive`, `consolidate` require registry to be accurate. If drift detected → fail with error, suggest `strap doctor --fix-paths`.
+- **registry-first** (default): Registry paths are assumed correct, disk is validated against registry. Commands like `move`, `rename`, `archive`, `consolidate` require registry to be accurate. If drift detected → fail with error; manual registry fix or re-adopt required.
 - **disk-discovery** (recovery mode): Used by `strap snapshot` and `strap adopt --scan` to discover repos on disk regardless of registry state.
 
 **Each entry includes:**
@@ -647,16 +639,6 @@ strap rename myproject --to my-project --move-folder --dry-run
 - Checks for registry-disk drift (repos in registry but not on disk, or vice versa)
 - Reports status: OK (all good), WARN (non-critical issues), or FAIL (critical issues)
 - Use `--json` for structured output instead of human-readable format
-
-**Fix modes:**
-
-- `--fix-paths` — Automatically fix registry entries with invalid paths using disk discovery. Searches managed roots for repos with matching names/remotes and updates registry paths.
-- `--fix-orphans` — Remove registry entries where the repo folder no longer exists on disk.
-
-**Trust mode support:**
-
-- Default (registry-first): Validates disk against registry, reports drift
-- With `--fix-paths` or `--fix-orphans`: Uses disk-discovery mode to reconcile registry with actual disk state
 
 ## Snapshot
 
