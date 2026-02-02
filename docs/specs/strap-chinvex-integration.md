@@ -2,6 +2,7 @@
 
 **Status:** Approved
 **Created:** 2026-01-31
+**Updated:** 2026-02-02 (archive redesign)
 **Context:** _strap (system-level integration)
 **Refined by:** Claude Code + Codex debate (4 rounds)
 
@@ -75,23 +76,35 @@ Strap will shell out to `chinvex` CLI (assumes chinvex is globally available via
    - Returns exit code 0 on success, non-zero on failure
 
 4. **`chinvex context archive {name}`**
-   - Moves `P:\ai_memory\contexts\{name}\` to `P:\ai_memory\contexts\_archived\{name}-{timestamp}\`
+   - Archives an existing managed context to the shared `archive` context
+   - Extracts lightweight metadata (name + description) and adds entry to `archive` context
+   - Description sourced from: context config, STATE.md Current Objective, or README.md first paragraph
+   - Removes the original full context (frees the name, drops embeddings/chunks)
    - Succeeds silently if context doesn't exist (idempotent)
    - Returns exit code 0 on success, non-zero on failure
+   - **Note:** The `archive` context is a table of contents — agents can see what existed without paying full storage cost
 
-5. **`chinvex ingest --context {name} --repo {path} [--register-only]`**
+5. **`chinvex archive --name {name} --dir {path} [--desc {description}]`**
+   - Archives an unmanaged directory directly to the `archive` context (no existing context required)
+   - If `--desc` omitted, auto-generates from: STATE.md Current Objective → README.md first paragraph → "No description available"
+   - Creates `archive` context if it doesn't exist
+   - Idempotent: adding same name twice updates the entry
+   - Returns exit code 0 on success, non-zero on failure
+   - **Use case:** Archiving repos that were never ingested into chinvex
+
+6. **`chinvex ingest --context {name} --repo {path} [--register-only]`**
    - With `--register-only`: adds repo path to context includes without running full ingestion
    - Without `--register-only`: adds path AND runs embedding/indexing (existing behavior)
    - **Assumes context exists** (fails if context missing; use `context create` first)
    - Idempotent: adding same path twice is a no-op (deduplicates)
    - Returns exit code 0 on success, non-zero on failure
 
-6. **`chinvex context remove-repo {context} --repo {path}`**
+7. **`chinvex context remove-repo {context} --repo {path}`**
    - Removes repo path from context includes
    - Succeeds silently if path not in includes (idempotent)
    - Returns exit code 0 on success, non-zero on failure
 
-7. **`chinvex context list [--json]`**
+8. **`chinvex context list [--json]`**
    - Lists all contexts with metadata: name, repo count, last ingest timestamp
    - With `--json`: machine-readable output for `strap contexts` to consume
    - Returns exit code 0 on success, non-zero on failure
@@ -111,8 +124,11 @@ if (chinvex context exists tools) { ... }
 # Rename context
 chinvex context rename oldname --to newname
 
-# Archive context
+# Archive managed context (extracts metadata, removes full context)
 chinvex context archive myrepo
+
+# Archive unmanaged directory directly
+chinvex archive --name old-experiment --dir "P:\software\old-experiment" --desc "Failed prototype from Q3"
 
 # Remove repo from context includes
 chinvex context remove-repo tools --repo "P:\software\_scripts\oldtool"
@@ -241,6 +257,7 @@ strap contexts
 # Context         Type       Repos  Last Ingest    Sync Status
 # myrepo          software   1      2026-01-30     ✓ synced
 # tools           tool       9      2026-01-29     ✓ synced
+# archive         system     15     2026-01-28     ✓ synced
 # orphan-context  software   0      never          ⚠ no strap entry
 ```
 
@@ -251,7 +268,7 @@ strap contexts
 - `--reconcile`: Apply reconciliation actions:
   - **Missing contexts:** Create contexts for strap entries that have `chinvex_context: null`
   - **Orphaned contexts:** Archive contexts that have no corresponding strap entry
-  - **Whitelist:** Never archive system contexts: `tools`
+  - **Whitelist:** Never archive system contexts: `tools`, `archive`
   - **Empty tools context:** If `tools` context exists but no tool repos in registry, keep it (don't archive)
 
 **Reconciliation rules:**
@@ -260,7 +277,7 @@ strap contexts
 |----------|--------|
 | Registry entry (software) has `chinvex_context: null` | Create individual context + register repo path |
 | Registry entry (tool) has `chinvex_context: null` | Create `tools` context (if missing) + register repo path |
-| Context exists but no registry entry | Archive (unless whitelisted: `tools`) |
+| Context exists but no registry entry | Archive (unless whitelisted: `tools`, `archive`) |
 | Registry entry points to missing context | Create context + register repo path (respects scope) |
 | `tools` context empty (0 tool repos) | Keep (don't archive) |
 | User-managed context (not in registry) | Archive UNLESS in whitelist |
@@ -268,6 +285,7 @@ strap contexts
 
 **Whitelist (never auto-archive):**
 - `tools` (system context for tool repos)
+- `archive` (system context for archived repos)
 - User can extend via `config.json`: `"chinvex_whitelist": ["custom-context"]`
 
 **Orphan handling:**

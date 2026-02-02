@@ -27,6 +27,8 @@ User noticed multiple issues:
 3. Wezterm not displaying (visible in task manager but no window)
 4. Telegram not displaying (same symptom)
 5. Claude Desktop showing blank window
+6. Claude Code and Codex not recognized as commands, delaying immediate diagnosis
+7. No global commands recognized
 
 ---
 
@@ -35,17 +37,20 @@ User noticed multiple issues:
 ### Issue 1: PowerShell Environment Variables Corrupted
 
 **Symptom:**
+- full `PATH` environment variable completely DELETED
 - `$env:PATH` displayed as `:PATH`
 - `$env:TEMP` displayed as `:TEMP`
 - Variable names being interpreted as `extglob.Name` instead of `$_.Name`
 
 **Diagnosis:**
+- opened windows environment variables -> PATH is empty
 ```powershell
 # This command showed corruption:
 $env:PATH  # Returned ":PATH" instead of actual path
 ```
 
 **Resolution:**
+- Extremeley lucky a PATH backup had been made earlier
 - Restart PowerShell session to reload environment from registry
 - Registry values were intact; only session-level environment was corrupted
 
