@@ -100,13 +100,19 @@ Creates a JSON manifest of current state before migration.
     "entries": [...]
   },
   "discovered": [
-    {"path": "C:\\Code\\chinvex", "in_registry": true, "name": "chinvex"},
-    {"path": "C:\\Code\\random-thing", "in_registry": false, "git": true, "last_commit": "2025-08-15"}
+    {"path": "C:\\Code\\chinvex", "in_registry": true, "name": "chinvex", "type": "git"},
+    {"path": "C:\\Code\\random-thing", "in_registry": false, "type": "git", "last_commit": "2025-08-15"},
+    {"path": "C:\\Code\\misc-scripts", "in_registry": false, "type": "directory", "last_modified": "2025-11-03"},
+    {"path": "C:\\Code\\helper.ps1", "in_registry": false, "type": "file"}
   ],
   "external_refs": {
     "pm2": [{"name": "chinvex-gateway", "cwd": "C:\\Code\\chinvex"}],
     "scheduled_tasks": [{"name": "MorningBrief", "path": "C:\\Code\\chinvex\\scripts\\morning_brief.ps1"}],
-    "shims": [{"name": "chinvex", "target": "C:\\Code\\chinvex"}]
+    "shims": [{"name": "chinvex", "target": "C:\\Code\\chinvex"}],
+    "path_entries": [{"entry": "C:\\Code\\chinvex\\bin", "matches_repo": "chinvex"}],
+    "profile_refs": [
+      {"file": "$PROFILE", "line": 12, "content": "Set-Alias cx C:\\Code\\chinvex\\scripts\\cli.ps1", "matches_repo": "chinvex"}
+    ]
   },
   "disk_usage": {
     "C:": {"total_gb": 500, "free_gb": 50},
@@ -126,6 +132,8 @@ Creates a JSON manifest of current state before migration.
 - PM2: parse `pm2 jlist`
 - Scheduled tasks: `Get-ScheduledTask` + inspect Actions for file paths
 - Shims: scan `build/shims/*.cmd` for target paths
+- PATH: check `$env:PATH` entries for directories inside source repos
+- Shell profiles: parse `$PROFILE` (PowerShell) and `~/.bashrc` / `~/.bash_profile` (WSL) for aliases, functions, and path additions referencing source repos
 
 **Limitations (acknowledged):**
 - Does NOT detect NSSM services, VS Code workspace settings, dynamic path construction, running Node/Python/PowerShell processes
@@ -134,22 +142,37 @@ Creates a JSON manifest of current state before migration.
 
 ### `strap adopt --scan <dir> [--recursive] [--dry-run] [--yes]`
 
-Discovers git repos in a directory and adds them to registry.
+Discovers all top-level directories (and standalone files) in a source directory and adds them to registry.
 
 ```
 Scanning C:\Code...
 
-Found 12 git repos:
-  chinvex        → already in registry
-  streamside     → already in registry
-  random-thing   → NEW (would adopt as software)
-  old-experiment → NEW (would adopt as software, last commit 2024-03)
-  tiny-script    → NEW (would adopt as tool - single file)
+Found 15 items:
+  Git repos:
+    chinvex        → already in registry
+    streamside     → already in registry
+    random-thing   → NEW (would adopt as software)
+    old-experiment → NEW (would adopt as software, last commit 2024-03)
 
-Run with --yes to adopt all NEW repos.
+  Non-git directories:
+    misc-scripts   → NEW (not git-tracked, would adopt as tool)
+    old-notes      → NEW (not git-tracked, would adopt as archive)
+
+  Standalone files:
+    helper.ps1     → SKIP (standalone file, not a directory)
+    notes.txt      → SKIP (standalone file, not a directory)
+
+Run with --yes to adopt all NEW items (excluding standalone files).
 ```
 
+**Classification of discovered items:**
+- **Git repo** → full adoption with scope heuristics (see below)
+- **Plain directory** → ask what to do: adopt as-is (tool/software/archive), skip, or ignore
+- **Standalone file** → surface in report but skip by default (not a project)
+
 **Scope detection heuristics (with confirmation):**
+
+*For git repos:*
 - Single script file + README → suggest tool
 - Last commit > `archive_threshold_days` (default 180) → **tentatively** suggest archive
   - **Safety overrides (force to `software` instead):**
@@ -160,8 +183,13 @@ Run with --yes to adopt all NEW repos.
   - Rationale: stable ≠ archived; only suggest archive for truly inactive AND unreferenced repos
 - Otherwise → suggest software
 
+*For non-git directories:*
+- Contains mostly scripts (`.ps1`, `.py`, `.js`, `.sh`) → suggest tool
+- Last modified > `archive_threshold_days` → suggest archive
+- Otherwise → prompt user (no strong heuristic)
+
 **Confirmation behavior:**
-- Without `--yes`: prompt per repo with suggested scope + reasoning, allow override
+- Without `--yes`: prompt per item with suggested scope + reasoning, allow override
 - With `--yes`: apply suggested scopes but NEVER auto-archive without explicit `--allow-auto-archive` flag
   - Default `--yes`: treats archives as `software` (safe default)
   - With `--yes --allow-auto-archive`: applies archive suggestions (bulk cleanup use case)
@@ -171,8 +199,7 @@ Run with --yes to adopt all NEW repos.
 - Skips repos already in registry (matches by path, case-insensitive on Windows)
 - `--recursive` searches subdirectories (default: top-level only)
 - `--dry-run` shows what would be adopted without writing
-- `--yes` adopts all without prompting
-- Non-git directories are ignored
+- `--yes` adopts all without prompting (excluding standalone files)
 
 ### `strap audit <name|--all> [--json] [--rebuild-index]`
 
@@ -194,13 +221,15 @@ External refs:
   - PM2: chinvex-gateway (cwd: C:\Code\chinvex)
   - Scheduled task: MorningBrief → C:\Code\chinvex\scripts\morning_brief.ps1
   - Shim: chinvex → C:\Code\chinvex
+  - PATH: C:\Code\chinvex\bin is in $env:PATH
+  - $PROFILE:12 → Set-Alias cx C:\Code\chinvex\scripts\cli.ps1
 
 Config files with paths:
   - .env:3 → P:\ai_memory (OK - data dir, not repo path)
 
 Summary:
   2 repos reference chinvex - will need updates after move
-  3 external refs - will need manual fix after move
+  5 external refs - will need manual fix after move
 ```
 
 **Scan targets:**
@@ -286,40 +315,114 @@ Then updates scope to `archive` in registry.
 
 ### `strap consolidate --from <dir> [--to <root>] [--dry-run] [--yes]`
 
-The big operation: adopt + move in one pass.
+The single entrypoint for the entire migration. Walks the user through every step as a guided wizard - snapshot, discovery, audit, preflight, execution, and verification all happen in sequence.
 
 ```
-Planning consolidation from C:\Code → P:\software...
+strap consolidate --from "C:\Code"
 
-Preflight checks:
-  ✓ Target P:\software exists
-  ✓ Free space: 1200 GB (need ~15 GB)
-  ✓ No path collisions detected
-  ✓ No repos currently in use (PM2 stopped)
+╔══════════════════════════════════════════╗
+║   Dev Environment Consolidation          ║
+║   Source: C:\Code → P:\software          ║
+╚══════════════════════════════════════════╝
 
-Step 1: Adopt untracked repos
-  random-thing     → adopt as software
-  old-experiment   → adopt as archive (last commit: 2024-03-15)
-  tiny-script      → adopt as tool
+Step 1/6: Snapshot
+  Saving current state to build/consolidate-snapshot-20260201.json...
+  Registry: 5 entries
+  Discovered: 8 git repos, 3 directories, 2 standalone files
+  External refs: 3 PM2, 1 scheduled task, 4 shims, 2 PATH entries, 1 $PROFILE ref
+  Disk: C: 50 GB free, P: 1200 GB free (need ~15 GB)
+  ✓ Snapshot saved
 
-Step 2: Move repos
-  chinvex          → P:\software\chinvex
-  streamside       → P:\software\streamside
-  random-thing     → P:\software\random-thing
-  old-experiment   → P:\software\_archive\old-experiment
-  tiny-script      → P:\software\_scripts\tiny-script
+Step 2/6: Discovery & Adoption
+  Scanning C:\Code...
 
-Potential breakage (from audit):
+  Git repos:
+    chinvex        → already in registry
+    streamside     → already in registry
+    random-thing   → NEW → software? [Y/n/tool/archive/skip]: y
+    old-experiment → NEW → archive (last commit 2024-03)? [Y/n/software/tool]: y
+
+  Non-git directories:
+    misc-scripts   → NEW → tool? [Y/n/software/archive/skip]: y
+
+  Standalone files:
+    helper.ps1     → SKIP (not a directory)
+
+  ✓ 3 items adopted
+
+Step 3/6: Audit
+  Scanning for path dependencies...
+
   chinvex:
-    - streamside references C:\Code\chinvex (hooks/post-commit.ps1:8)
-    - PM2 config points to C:\Code\chinvex
-    - Scheduled task MorningBrief references C:\Code\chinvex
+    Inbound: streamside (hooks/post-commit.ps1:8), godex (src/memory.ts:23)
+    External: PM2 chinvex-gateway, Scheduled task MorningBrief, $PROFILE:12
 
-Run without --dry-run to execute.
-After migration, run 'strap doctor' and fix any issues.
+  streamside:
+    Inbound: (none)
+    External: Shim streamside
+
+  ✓ Audit complete: 2 cross-repo refs, 5 external refs
+
+Step 4/6: Preflight
+  ✓ Disk space: need 15 GB, have 1200 GB free
+  ✓ No path collisions
+  ✓ No git worktrees detected
+  ✓ All working trees clean
+  ⚠ PM2: chinvex-gateway uses C:\Code\chinvex → will stop with --stop-pm2
+  ⚠ $PROFILE:12 references C:\Code\chinvex → manual fix needed after
+  ⚠ Scheduled task MorningBrief → manual fix needed after
+
+  Close IDEs and terminals for repos being moved.
+  Press Enter to continue (or Ctrl+C to abort)...
+
+Step 5/6: Execute
+  Stopping PM2: chinvex-gateway... ✓
+  Moving chinvex → P:\software\chinvex... ✓ (verified: git fsck OK, objects match)
+  Moving streamside → P:\software\streamside... ✓ (verified)
+  Moving random-thing → P:\software\random-thing... ✓ (verified)
+  Moving old-experiment → P:\software\_archive\old-experiment... ✓ (verified)
+  Moving misc-scripts → P:\software\_scripts\misc-scripts... ✓ (copied, file count verified)
+  Updating registry... ✓
+  Updating chinvex contexts... ✓
+  Starting PM2: chinvex-gateway... ✓
+
+Step 6/6: Verify
+  Running strap doctor...
+  ✓ All 8 registry paths valid
+  ✓ All shims point to valid locations
+  ✓ Chinvex contexts synced
+
+  ⚠ Manual fixes needed:
+    1. $PROFILE:12 → update: Set-Alias cx P:\software\chinvex\scripts\cli.ps1
+    2. Scheduled task MorningBrief → update path to P:\software\chinvex\scripts\morning_brief.ps1
+    3. PATH: remove C:\Code\chinvex\bin (now at P:\software\chinvex\bin via shim)
+
+  Rollback log: build/consolidate-rollback-20260201.json
+  Source directory C:\Code is now empty - safe to delete.
+
+Done! Run 'strap consolidate --from "C:\Users\Jordan\Documents\Code"' next.
 ```
 
-**Preflight checks:**
+**Wizard behavior:**
+- Each step runs automatically in sequence
+- Interactive prompts pause at Step 2 (scope selection) and Step 4 (IDE closure)
+- With `--yes`: skips scope confirmation (uses heuristic defaults) and IDE closure pause
+- With `--dry-run`: runs Steps 1-4 only, shows full plan without executing
+- Step 6 (verify) always runs `strap doctor` and shows actionable manual fix instructions
+- PM2 services are stopped before moves and restarted after (with `--stop-pm2` or prompted)
+- If any step fails, stops immediately with clear error and rollback instructions
+
+**Flags:**
+- `--from <dir>` — source directory to consolidate (required)
+- `--to <root>` — override destination root (default: from config roots based on scope)
+- `--dry-run` — run through Steps 1-4 (plan only), don't execute
+- `--yes` — skip interactive prompts (still shows output)
+- `--stop-pm2` — auto-stop affected PM2 services during migration
+- `--ack-scheduled-tasks` — acknowledge scheduled task warnings
+- `--allow-dirty` — allow repos with uncommitted changes
+- `--allow-auto-archive` — with `--yes`, apply archive heuristic suggestions automatically
+
+**Preflight checks (Step 4):**
 - Target roots exist and are writable
 - Sufficient free space on target drive (check each source repo size + 20% safety margin for cross-volume copies)
 - No destination path collisions (case-insensitive on Windows)
@@ -328,7 +431,7 @@ After migration, run 'strap doctor' and fix any issues.
 - PM2 services using source repo paths (check `pm2 jlist`, compare cwd and script paths)
   - If PM2 services found **for repos being moved**: **warn** and require `--stop-pm2` flag to proceed
   - If PM2 services exist but none affect repos being moved: no action required
-  - With `--stop-pm2`: automatically stop ONLY affected services, save list for restart
+  - With `--stop-pm2`: automatically stop ONLY affected services, save list for restart after Step 5
   - If `pm2` command not found: skip PM2 check with warning
 - Scheduled tasks check (best-effort, not required):
   - If running as admin: scan `Get-ScheduledTask` for source repo paths
@@ -348,8 +451,38 @@ After migration, run 'strap doctor' and fix any issues.
 
 **Safety philosophy:** Preflight failures require explicit acknowledgment flags (no silent proceed)
 
-**Transaction safety:**
-- Create rollback log at `build/consolidate-rollback-{timestamp}.json` before starting
+**How the wizard maps to execution phases:**
+
+The wizard's 6 steps are the user-facing view of a two-phase operation:
+
+| Wizard Step | Phase | What happens |
+|-------------|-------|--------------|
+| Step 1: Snapshot | Plan | Save pre-migration state |
+| Step 2: Discovery | Plan | Scan source, classify items, prompt for scope |
+| Step 3: Audit | Plan | Detect dependencies + external refs |
+| Step 4: Preflight | Plan | Validate safety, pause for IDE closure |
+| Step 5: Execute | Execute | Moves + registry + chinvex (transactional) |
+| Step 6: Verify | Post-execute | `strap doctor` + manual fix list |
+
+- `--dry-run` stops after Step 4 (plan phase only)
+- `--yes` skips interactive prompts in Steps 2 and 4 but still shows all output
+- Plan is saved to `build/consolidate-plan-{timestamp}.json` after Step 4
+- Step 5 validates plan freshness before executing (commit hashes + registry timestamp unchanged since Step 4)
+
+**Plan file contents** (`build/consolidate-plan-{timestamp}.json`):
+- Plan metadata: timestamp, plan hash, source directory
+- Repos to move (list with current paths + destination paths + scopes)
+- Adoptions planned (repos not yet in registry, with proposed scopes)
+- Detected dependencies with **confidence markers:**
+  - `[HIGH]`: File path found in tracked files
+  - `[MEDIUM]`: Path-like string found (potential false positive)
+  - `[AUDIT GAPS]`: Dynamic paths/binaries/submodules not scanned (user review required)
+- Preflight status (PASS/WARN/FAIL per check)
+- Estimated time/space requirements
+- Plan hash (SHA256 of **deterministic** content: sorted repo paths + destinations + scopes + commit hashes, excluding timestamps)
+
+**Transaction safety (Step 5):**
+- Create rollback log at `build/consolidate-rollback-{timestamp}.json` before starting moves
 - Log contains: source path, destination path, registry snapshot before changes, list of completed moves
 - Registry changes are written only AFTER all moves succeed
 - **Move semantics (IMPORTANT - not truly atomic):**
@@ -373,7 +506,21 @@ After migration, run 'strap doctor' and fix any issues.
     4. Only if git fsck PASSES and object counts match and (HEAD matches OR empty repo): delete source
     5. If git fsck FAILS or object count mismatch or HEAD mismatch: delete incomplete destination copy, keep source, **fail consolidation with detailed error**
     6. **Verification scope:** Git object database integrity ONLY. User responsible for post-move validation of LFS/submodules if applicable.
+  - **Non-git directories:** cross-volume verification uses file count + total size comparison (not git checks)
   - For cross-volume: if copy+verify succeeds but delete fails → destination has verified repo, source still exists (**safe** state, manual cleanup needed)
+- **After all moves succeed (transactional block):**
+  a. Write registry changes:
+     - Update paths for moved repos
+     - Add adopted repos to registry
+     - Update scopes (e.g., archived repos)
+     - Bump registry version if needed (V1→V2)
+  b. Update chinvex contexts (via strap-chinvex integration):
+     - Create individual contexts for new software repos
+     - Add to `tools` context for new tool repos
+     - Add to `archive` context for archived repos
+     - **If chinvex update fails:** rollback registry changes, report error, consolidation **fails**
+  c. Restart PM2 services that were stopped in preflight
+  d. Remove lock file
 - If ANY move fails:
   - Stop immediately
   - Rollback completed moves in reverse order:
@@ -382,69 +529,24 @@ After migration, run 'strap doctor' and fix any issues.
   - Registry NOT updated (still points to original paths)
   - Report failure with rollback log path showing what succeeded/failed
 
+**Chinvex transaction safety:**
+- Chinvex updates happen AFTER registry writes
+- If chinvex fails: registry is rolled back (revert to backup made before transaction block)
+- Result: all-or-nothing - either both registry + chinvex updated, or neither
+
 **Concurrency control:**
-- Lock file: `build/.consolidate.lock` (created at plan start, deleted at completion)
+- Lock file: `build/.consolidate.lock` (created at wizard start, deleted at completion)
 - Lock contains: PID, timestamp, command, plan file path
 - If lock exists: check if PID is running
   - If PID still running → **fail** "Another consolidation in progress (PID {pid})"
   - If PID not running → stale lock, remove and proceed
 - Lock prevents: concurrent consolidate, concurrent doctor --fix-paths, concurrent adopt --scan
 
-**Two-phase execution:**
-
-**Phase 1: Plan (always runs, even with `--yes`):**
-1. Discover repos in source directory
-2. **PLAN adoption** for untracked repos (scope heuristics + confirmation) - **NO registry writes**
-3. Run audit to detect dependencies
-4. Calculate moves (source → destination mapping, including planned adoptions)
-5. Run preflight checks
-6. Generate execution plan saved to `build/consolidate-plan-{timestamp}.json`:
-   - Plan metadata: timestamp, plan hash, source directory
-   - Repos to move (list with current paths + destination paths + scopes)
-   - Adoptions planned (repos not yet in registry, with proposed scopes)
-   - Detected dependencies with **confidence markers:**
-     - `[HIGH]`: File path found in tracked files
-     - `[MEDIUM]`: Path-like string found (potential false positive)
-     - `[AUDIT GAPS]`: Dynamic paths/binaries/submodules not scanned (user review required)
-   - Preflight status (PASS/WARN/FAIL per check)
-   - Estimated time/space requirements
-   - Plan hash (SHA256 of **deterministic** content: sorted repo paths + destinations + scopes + commit hashes, excluding timestamps)
-
-**Phase 2: Execute (requires confirmation + plan freshness validation):**
-1. Load plan from `build/consolidate-plan-{timestamp}.json`
-2. Check plan freshness:
-   - Compare plan's repo commit hashes with current HEAD
-   - If ANY repo commit changed → **fail**, require re-plan
-   - If registry modified (compare registry timestamp) → **fail**, require re-plan
-3. Without `--yes`: display plan, prompt "Proceed with consolidation? [y/N]"
-4. With `--yes`: display plan, execute immediately (skip interactive confirmation)
-5. Before execution: final check - require ALL preflight checks PASS or have ack flags
-6. Create rollback log at `build/consolidate-rollback-{timestamp}.json` with plan reference
-7. Execute moves with integrity verification
-8. **AFTER all moves succeed (transactional block):**
-   a. Write registry changes:
-      - Update paths for moved repos
-      - Add adopted repos to registry
-      - Update scopes (e.g., archived repos)
-      - Bump registry version if needed (V1→V2)
-   b. Update chinvex contexts (via strap-chinvex integration):
-      - Create individual contexts for new software repos
-      - Add to `tools` context for new tool repos
-      - Add to `archive` context for archived repos
-      - **If chinvex update fails:** rollback registry changes, report error, consolidation **fails**
-   c. Remove lock file
-9. Report results with rollback log path
-
-**Chinvex transaction safety:**
-- Chinvex updates happen AFTER registry writes
-- If chinvex fails: registry is rolled back (revert to backup made before transaction block)
-- Result: all-or-nothing - either both registry + chinvex updated, or neither
-
 **Behavior:**
 - Defaults `--to` based on scope (software root, tools root, archive root)
 - Stops on first error, rolls back completed operations
 - Chinvex contexts handled automatically via strap-chinvex integration
-- Does NOT auto-fix cross-repo references (manual)
+- Does NOT auto-fix cross-repo references (manual — surfaced in Step 6)
 
 **Resume capability:**
 - Rollback log tracks completion state per repo at `build/consolidate-rollback-{timestamp}.json`:
@@ -532,51 +634,60 @@ Add new fields to existing config structure:
 
 ## Migration Workflow
 
+`strap consolidate` is the single entrypoint. It handles snapshot, discovery, audit, preflight, execution, and verification automatically.
+
 ```powershell
-# 1. Snapshot current state
-strap snapshot --output pre-migration.json --scan "C:\Code" --scan "C:\Users\Jordan\Documents\Code"
+# Consolidate first source directory
+strap consolidate --from "C:\Code"
 
-# 2. See what's out there (dry run)
-strap adopt --scan "C:\Code" --dry-run
-strap adopt --scan "C:\Users\Jordan\Documents\Code" --dry-run
+# Consolidate second source directory
+strap consolidate --from "C:\Users\Jordan\Documents\Code"
 
-# 3. Audit everything for potential breakage
+# Fix any remaining manual items (consolidate tells you exactly what)
+
+# Delete empty source directories
+```
+
+**For cautious users:** Run with `--dry-run` first to see the full plan without executing:
+
+```powershell
+strap consolidate --from "C:\Code" --dry-run
+```
+
+**Individual commands are still available** for targeted operations:
+
+```powershell
+# Just snapshot without consolidating
+strap snapshot --output pre-migration.json --scan "C:\Code"
+
+# Just audit without moving anything
 strap audit --all --rebuild-index
 
-# 4. MANUAL: Close VS Code, terminals, IDEs running from repos being moved
+# Archive a single project
+strap archive old-experiment --yes
 
-# 5. Do it (dry run first!)
-# Consolidate will automatically stop only affected PM2 services (preflight check)
-strap consolidate --from "C:\Code" --dry-run
-strap consolidate --from "C:\Code" --yes
-
-strap consolidate --from "C:\Users\Jordan\Documents\Code" --dry-run
-strap consolidate --from "C:\Users\Jordan\Documents\Code" --yes
-
-# 6. Restart services (if consolidate stopped them)
-pm2 start all
-
-# 7. Validate
-strap doctor
-
-# 8. Fix what broke (scheduled tasks, manual PM2 config updates if needed, use audit output as guide)
-
-# 9. Re-audit to verify
-strap audit --all
-
-# 10. Delete empty source directories (manual verification first)
+# Adopt a single repo
+strap adopt --path "C:\Code\random-thing" --software
 ```
 
 ## Acceptance Criteria
 
-- [ ] `strap snapshot` captures registry + discovered repos + external refs + disk space
-- [ ] `strap adopt --scan` finds git repos and adds to registry
+- [ ] `strap snapshot` captures registry + discovered items (git repos, dirs, files) + external refs + disk space
+- [ ] `strap snapshot` detects PATH entries, $PROFILE refs, and .bashrc refs
+- [ ] `strap adopt --scan` finds git repos AND non-git directories, classifies each
+- [ ] `strap adopt --scan` surfaces standalone files but skips them by default
 - [ ] `strap adopt` skips already-registered repos
 - [ ] `strap audit` shows inbound + outbound path refs across all repos
-- [ ] `strap audit` detects PM2, scheduled tasks, and shim references
+- [ ] `strap audit` detects PM2, scheduled tasks, shim, PATH, and shell profile references
 - [ ] `strap audit --all` builds and uses index for performance
 - [ ] `strap audit` excludes node_modules/venv/.git
 - [ ] `strap archive` moves to archive root and updates scope + chinvex context
+- [ ] `strap consolidate` runs as guided wizard (Steps 1-6: Snapshot → Discovery → Audit → Preflight → Execute → Verify)
+- [ ] `strap consolidate` wizard pauses for user input at Step 2 (scope selection) and Step 4 (IDE closure)
+- [ ] `strap consolidate --yes` skips interactive prompts, uses heuristic defaults for scope
+- [ ] `strap consolidate --dry-run` runs Steps 1-4 only, shows plan without executing
+- [ ] `strap consolidate` Step 6 runs `strap doctor` and shows actionable manual fix list
+- [ ] `strap consolidate` auto-restarts PM2 services after successful migration
 - [ ] `strap consolidate` runs preflight checks (space, collisions, PM2, scheduled tasks, worktrees, dirty repos)
 - [ ] `strap consolidate` supports `--allow-dirty` flag to bypass clean working tree requirement
 - [ ] `strap consolidate` stops only affected PM2 services (not all)
@@ -659,8 +770,11 @@ strap audit --all
 - Out of scope: preserving exact ACLs (user must verify permissions post-move)
 
 **Non-git folders:**
-- `adopt --scan` only detects git repos (looks for `.git` directory)
-- Non-git script folders are ignored (user must manually adopt or create git repo)
+- `adopt --scan` discovers ALL top-level items (git repos, plain directories, standalone files)
+- Plain directories are surfaced and prompted for scope (tool/software/archive/skip)
+- Standalone files are reported but skipped by default (not projects)
+- Non-git directories have limited heuristics (no commit history) - scope suggestion based on file contents and last modified date
+- Cross-volume integrity verification uses file count + size comparison instead of git-based checks for non-git directories
 
 **Junctions and symlinks:**
 - If found **inside** repo: treat as files, move as-is (don't follow)
@@ -677,10 +791,11 @@ strap audit --all
 ## Out of Scope
 
 - **Auto-fixing cross-repo references** - too risky, manual is fine (audit provides roadmap)
+- **Auto-shimming adopted tools** - strap can't reliably guess entry points; use `strap shim` after adoption
 - **Symlinks/junctions deep handling** - if present, treat as files (move them as-is, don't follow)
 - **Topological move ordering** - just move everything, fix what breaks (audit shows dependencies)
 - **File-level backup** - snapshot is metadata only; use git for actual backup
-- **Detection of all external integrations** - only PM2, scheduled tasks, shims covered; user audits NSSM, VS Code, etc.
+- **Detection of all external integrations** - PM2, scheduled tasks, shims, PATH, $PROFILE, .bashrc covered; user audits NSSM, VS Code workspaces, etc.
 - **Dynamic path construction** - static path scanning only
 - **ACL preservation** - user must verify permissions after cross-volume moves
 - **Concurrent strap operations** - no locking mechanism; user must not run multiple strap commands simultaneously
