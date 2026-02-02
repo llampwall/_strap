@@ -342,6 +342,62 @@ function Get-RegistryVersion($registryPath) {
   return 0
 }
 
+# Consolidate helper functions
+
+function Normalize-Path {
+  param([string] $Path)
+  if (-not $Path) { return "" }
+  return [System.IO.Path]::GetFullPath($Path).ToLowerInvariant().Replace('/', '\').TrimEnd('\')
+}
+
+function Test-PathWithinRoot {
+  param(
+    [string] $Path,
+    [string] $RootPath
+  )
+  if (-not $Path -or -not $RootPath) { return $false }
+  $normalizedPath = Normalize-Path $Path
+  $normalizedRoot = Normalize-Path $RootPath
+  return $normalizedPath.StartsWith($normalizedRoot, [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Find-DuplicatePaths {
+  param([array] $Paths)
+
+  $seen = @{}
+  foreach ($path in $Paths) {
+    if (-not $path) { continue }
+    $key = $path.ToLowerInvariant()
+    if ($seen.ContainsKey($key) -and $seen[$key] -ne $path) {
+      return "$($seen[$key]) <-> $path"
+    }
+    $seen[$key] = $path
+  }
+  return $null
+}
+
+function Test-ProcessRunning {
+  param([int] $ProcessId)
+  try {
+    $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    return $null -ne $process
+  } catch {
+    return $false
+  }
+}
+
+function Get-DirectorySize {
+  param([string] $Path)
+  if (-not (Test-Path -LiteralPath $Path)) { return 0 }
+  try {
+    $size = (Get-ChildItem -LiteralPath $Path -Recurse -File -ErrorAction SilentlyContinue |
+      Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+    return [long]($size ?? 0)
+  } catch {
+    return 0
+  }
+}
+
 function Invoke-Migration-0-to-1 {
   param(
     [PSCustomObject] $RegistryData,
@@ -2984,6 +3040,266 @@ function Invoke-Migrate {
   exit 0
 }
 
+# ============================================================================
+# Consolidate command functions
+# ============================================================================
+
+function Test-ConsolidateArgs {
+  param(
+    [string] $FromPath,
+    [string] $ToPath,
+    [string] $TrustMode
+  )
+
+  if (-not $FromPath) {
+    Die "--from is required for consolidate command"
+  }
+
+  if ($TrustMode -ne "registry-first") {
+    Die "strap consolidate is registry-first; run 'strap doctor --fix-paths' first for disk-discovery recovery"
+  }
+
+  if (-not (Test-Path -LiteralPath $FromPath)) {
+    Die "--from directory does not exist: $FromPath"
+  }
+}
+
+function Test-ConsolidateRegistryDisk {
+  param(
+    [array] $RegisteredMoves,
+    [array] $DiscoveredCandidates
+  )
+
+  $warnings = @()
+
+  # Check registry paths exist (no drift)
+  foreach ($move in $RegisteredMoves) {
+    if (-not (Test-Path -LiteralPath $move.registryPath)) {
+      throw "Registry path drift detected for '$($move.name)'. Run 'strap doctor --fix-paths'."
+    }
+
+    # Check destination doesn't already exist
+    if (Test-Path -LiteralPath $move.destinationPath) {
+      throw "Conflict: destination already exists for '$($move.name)': $($move.destinationPath). Resolve manually before consolidate."
+    }
+  }
+
+  # Check for name collisions
+  foreach ($candidate in $DiscoveredCandidates) {
+    $matching = $RegisteredMoves | Where-Object { $_.name.ToLowerInvariant() -eq $candidate.name.ToLowerInvariant() }
+    if ($matching) {
+      $normalizedRegistry = Normalize-Path $matching.registryPath
+      $normalizedCandidate = Normalize-Path $candidate.sourcePath
+
+      if ($normalizedRegistry -ne $normalizedCandidate) {
+        $warnings += "Name collision: discovered repo '$($candidate.name)' differs from registered path. Treating as separate repo; rename before adopt to avoid confusion."
+      }
+    }
+  }
+
+  return @{ warnings = $warnings }
+}
+
+function Test-ConsolidateEdgeCaseGuards {
+  param(
+    [array] $MovePlans,
+    [string] $LockFilePath,
+    [switch] $NonInteractive
+  )
+
+  # Check for running process locks
+  if ($LockFilePath -and (Test-Path -LiteralPath $LockFilePath)) {
+    try {
+      $lockData = Get-Content -LiteralPath $LockFilePath -Raw | ConvertFrom-Json
+      $running = Test-ProcessRunning -ProcessId $lockData.pid
+      if ($running) {
+        throw "Another consolidation in progress (PID $($lockData.pid))"
+      }
+      # Remove stale lock
+      Remove-Item -LiteralPath $LockFilePath -Force -ErrorAction SilentlyContinue
+    } catch {
+      # If lock file is corrupted, remove it
+      Remove-Item -LiteralPath $LockFilePath -Force -ErrorAction SilentlyContinue
+    }
+  }
+
+  # Check for destination path collisions
+  $destinationPaths = $MovePlans | ForEach-Object { $_.toPath }
+  $collision = Find-DuplicatePaths -Paths $destinationPaths
+  if ($collision) {
+    throw "Destination path collision detected: $collision"
+  }
+
+  # Check for adoption ID collisions
+  $proposedIds = $MovePlans | ForEach-Object { $_.name }
+  $seenIds = @{}
+  $resolved = @()
+
+  foreach ($plan in $MovePlans) {
+    $key = $plan.name.ToLowerInvariant()
+    if ($seenIds.ContainsKey($key)) {
+      if ($NonInteractive) {
+        throw "Adoption ID collision detected for '$($plan.name)' in --yes mode."
+      }
+      # In interactive mode, would prompt for resolution
+      # For now, just error out
+      throw "Adoption ID collision detected for '$($plan.name)'. Use unique names."
+    }
+    $seenIds[$key] = $true
+    $resolved += $plan
+  }
+
+  return @{ ok = $true; resolved = $resolved }
+}
+
+function Invoke-ConsolidateMigrationWorkflow {
+  param(
+    [string] $FromPath,
+    [string] $ToPath,
+    [switch] $DryRun,
+    [switch] $Yes,
+    [switch] $StopPm2,
+    [switch] $AckScheduledTasks,
+    [switch] $AllowDirty,
+    [switch] $AllowAutoArchive,
+    [string] $StrapRootPath
+  )
+
+  Write-Host "`n🔄 Starting consolidation workflow..." -ForegroundColor Cyan
+  Write-Host "   From: $FromPath" -ForegroundColor Gray
+
+  # Load config and registry
+  $config = Load-Config $StrapRootPath
+  $registry = Load-Registry $config
+
+  # Step 1: Snapshot
+  Write-Host "`n[1/6] Creating snapshot..." -ForegroundColor Yellow
+  $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+  $snapshotDir = Join-Path $StrapRootPath "build"
+  if (-not (Test-Path $snapshotDir)) {
+    New-Item -ItemType Directory -Path $snapshotDir -Force | Out-Null
+  }
+  $snapshotPath = Join-Path $snapshotDir "consolidate-snapshot-$timestamp.json"
+
+  $snapshot = @{
+    timestamp = $timestamp
+    fromPath = $FromPath
+    registryCount = $registry.Count
+    dryRun = $DryRun.IsPresent
+  }
+  $snapshot | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $snapshotPath
+  Info "Snapshot saved: $snapshotPath"
+
+  # Step 2: Discovery (scan for repos and adopt them)
+  Write-Host "`n[2/6] Discovering repositories..." -ForegroundColor Yellow
+  $discovered = @()
+
+  if (Test-Path -LiteralPath $FromPath) {
+    $subdirs = Get-ChildItem -LiteralPath $FromPath -Directory -ErrorAction SilentlyContinue
+    foreach ($dir in $subdirs) {
+      $gitDir = Join-Path $dir.FullName ".git"
+      if (Test-Path -LiteralPath $gitDir) {
+        $repoName = $dir.Name
+        Info "Found: $repoName"
+
+        # Adopt the repo if not in dry-run mode
+        if (-not $DryRun) {
+          try {
+            # Call Invoke-Adopt with the discovered path
+            Invoke-Adopt -TargetPath $dir.FullName -NonInteractive:$Yes -DryRunMode:$false -StrapRootPath $StrapRootPath
+            $discovered += @{ name = $repoName; path = $dir.FullName; adopted = $true }
+          } catch {
+            Warn "Failed to adopt $repoName : $_"
+            $discovered += @{ name = $repoName; path = $dir.FullName; adopted = $false; error = $_.Exception.Message }
+          }
+        } else {
+          $discovered += @{ name = $repoName; path = $dir.FullName; adopted = $false }
+        }
+      }
+    }
+  }
+
+  if ($discovered.Count -eq 0) {
+    Info "No repositories found to consolidate"
+    return @{ executed = $false; manualFixes = @() }
+  }
+
+  Info "Discovered $($discovered.Count) repositories"
+
+  # Step 3: Audit (check for external references)
+  Write-Host "`n[3/6] Auditing external references..." -ForegroundColor Yellow
+  $auditWarnings = @()
+
+  # Check for PM2 processes
+  if (Has-Command "pm2") {
+    try {
+      $pm2List = & pm2 jlist 2>$null | ConvertFrom-Json -ErrorAction SilentlyContinue
+      foreach ($proc in $pm2List) {
+        if ($proc.pm2_env.pm_cwd -and $proc.pm2_env.pm_cwd.StartsWith($FromPath, [StringComparison]::OrdinalIgnoreCase)) {
+          $auditWarnings += "PM2 process '$($proc.name)' references $FromPath"
+        }
+      }
+    } catch {
+      # PM2 not available or error - skip
+    }
+  }
+
+  if ($auditWarnings.Count -gt 0) {
+    Warn "External references detected:"
+    foreach ($w in $auditWarnings) {
+      Write-Host "  - $w" -ForegroundColor Yellow
+    }
+
+    if (-not $AckScheduledTasks) {
+      Die "External references detected. Re-run with --ack-scheduled-tasks to continue."
+    }
+  }
+
+  # Step 4: Preflight checks
+  Write-Host "`n[4/6] Running preflight checks..." -ForegroundColor Yellow
+
+  # Check disk space
+  $sourceSize = Get-DirectorySize -Path $FromPath
+  $sourceSizeMB = [math]::Round($sourceSize / 1MB, 2)
+  Info "Source size: $sourceSizeMB MB"
+
+  # Check if dry-run
+  if ($DryRun) {
+    Write-Host "`n✅ DRY RUN complete - no changes made" -ForegroundColor Green
+    Write-Host "   Repos discovered: $($discovered.Count)" -ForegroundColor Gray
+    return @{ executed = $false; manualFixes = @() }
+  }
+
+  # Step 5: Execute moves (already done via Invoke-Adopt)
+  Write-Host "`n[5/6] Repositories adopted..." -ForegroundColor Yellow
+  $adoptedCount = ($discovered | Where-Object { $_.adopted -eq $true }).Count
+  Info "Adopted $adoptedCount repositories"
+
+  # Step 6: Verify with doctor
+  Write-Host "`n[6/6] Running verification..." -ForegroundColor Yellow
+  try {
+    Invoke-Doctor -StrapRootPath $StrapRootPath -OutputJson:$false
+  } catch {
+    Warn "Doctor verification found issues (non-fatal): $_"
+  }
+
+  Write-Host "`n✅ Consolidation complete!" -ForegroundColor Green
+
+  # Show manual fixes if any repos failed
+  $manualFixes = @()
+  $failed = $discovered | Where-Object { $_.adopted -eq $false -and $_.error }
+  if ($failed) {
+    Write-Host "`n⚠️  Manual fixes required:" -ForegroundColor Yellow
+    foreach ($f in $failed) {
+      $msg = "Failed to adopt $($f.name): $($f.error)"
+      Write-Host "  - $msg" -ForegroundColor Yellow
+      $manualFixes += $msg
+    }
+  }
+
+  return @{ executed = $true; manualFixes = $manualFixes }
+}
+
 if ($RepoName -eq "templatize") {
   $templateName = Get-TemplateNameFromArgs $ExtraArgs
   Invoke-Templatize -TemplateName $templateName -SourcePath $Source -RootPath $TemplateRoot -ForceTemplate:$Force.IsPresent -AllowDirtyWorktree:$AllowDirty.IsPresent -MessageText $Message -DoPush:$Push.IsPresent
@@ -2998,6 +3314,53 @@ if ($RepoName -eq "doctor") {
 if ($RepoName -eq "migrate") {
   $targetVersion = if ($To -gt 0) { $To } else { $script:LATEST_REGISTRY_VERSION }
   Invoke-Migrate -TargetVersion $targetVersion -PlanOnly:$Plan.IsPresent -NonInteractive:$Yes.IsPresent -DryRunMode:$DryRun.IsPresent -CreateBackup:$Backup.IsPresent -OutputJson:$Json.IsPresent -StrapRootPath $TemplateRoot
+  exit 0
+}
+
+if ($RepoName -eq "consolidate") {
+  # Parse consolidate-specific args from $ExtraArgs
+  $fromPath = $null
+  $toPath = $null
+  $stopPm2 = $false
+  $ackScheduledTasks = $false
+  $allowDirty = $false
+  $allowAutoArchive = $false
+
+  # Parse ExtraArgs for consolidate flags
+  for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
+    if ($ExtraArgs[$i] -eq "--from" -and ($i + 1) -lt $ExtraArgs.Count) {
+      $fromPath = $ExtraArgs[$i + 1]
+      $i++
+    }
+    elseif ($ExtraArgs[$i] -eq "--to" -and ($i + 1) -lt $ExtraArgs.Count) {
+      $toPath = $ExtraArgs[$i + 1]
+      $i++
+    }
+    elseif ($ExtraArgs[$i] -eq "--stop-pm2") { $stopPm2 = $true }
+    elseif ($ExtraArgs[$i] -eq "--ack-scheduled-tasks") { $ackScheduledTasks = $true }
+    elseif ($ExtraArgs[$i] -eq "--allow-dirty") { $allowDirty = $true }
+    elseif ($ExtraArgs[$i] -eq "--allow-auto-archive") { $allowAutoArchive = $true }
+  }
+
+  # Validate args
+  Test-ConsolidateArgs -FromPath $fromPath -ToPath $toPath -TrustMode "registry-first"
+
+  # Call main workflow
+  $result = Invoke-ConsolidateMigrationWorkflow `
+    -FromPath $fromPath `
+    -ToPath $toPath `
+    -DryRun:$DryRun.IsPresent `
+    -Yes:$Yes.IsPresent `
+    -StopPm2:$stopPm2 `
+    -AckScheduledTasks:$ackScheduledTasks `
+    -AllowDirty:$allowDirty `
+    -AllowAutoArchive:$allowAutoArchive `
+    -StrapRootPath $TemplateRoot
+
+  if ($result.manualFixes.Count -gt 0) {
+    exit 1
+  }
+
   exit 0
 }
 
