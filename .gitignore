@@ -1,0 +1,48 @@
+# Node.js
+node_modules/
+pnpm-lock.yaml
+*.log
+npm-debug.log*
+.npm
+.pnpm-debug.log*
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+.Python
+*.egg-info/
+.eggs/
+
+# Virtual env
+.venv/
+venv/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Chinvex indexes
+hybrid.db
+chroma/
+
+# Local configs
+/*.json
+*.local.json
+*.local.toml
+*.env
+start_gateway.ps1
+
+# Worktrees
+.worktrees/
+
+# OS
+Thumbs.db
+Desktop.ini
+.claude/
