@@ -3152,6 +3152,178 @@ function Test-ConsolidateEdgeCaseGuards {
   return @{ ok = $true; resolved = $resolved }
 }
 
+function Invoke-ConsolidateExecuteMove {
+  param(
+    [string] $Name,
+    [string] $FromPath,
+    [string] $ToPath
+  )
+
+  # Create parent directory if needed
+  $parentDir = Split-Path -Parent $ToPath
+  if (-not (Test-Path -LiteralPath $parentDir)) {
+    New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
+  }
+
+  # Check if destination already exists
+  if (Test-Path -LiteralPath $ToPath) {
+    throw "Destination already exists: $ToPath"
+  }
+
+  # Execute move
+  try {
+    Move-Item -LiteralPath $FromPath -Destination $ToPath -Force
+  } catch {
+    throw "Failed to move $Name from $FromPath to $ToPath : $_"
+  }
+
+  # Verify git integrity
+  Push-Location $ToPath
+  try {
+    $gitStatus = git status 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      throw "Git integrity check failed after move"
+    }
+  } finally {
+    Pop-Location
+  }
+}
+
+function Invoke-ConsolidateRollbackMove {
+  param(
+    [string] $Name,
+    [string] $FromPath,
+    [string] $ToPath
+  )
+
+  if (Test-Path -LiteralPath $ToPath) {
+    try {
+      Move-Item -LiteralPath $ToPath -Destination $FromPath -Force
+      Write-Host "  Rolled back: $Name" -ForegroundColor Yellow
+    } catch {
+      Warn "Failed to rollback $Name : $_"
+    }
+  }
+}
+
+function Invoke-ConsolidateTransaction {
+  param(
+    [array] $Plans,
+    [object] $Config,
+    [array] $Registry,
+    [string] $StrapRootPath
+  )
+
+  $completed = @()
+  $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+  $rollbackLogPath = Join-Path $StrapRootPath "build\consolidate-rollback-$timestamp.json"
+
+  # Ensure build directory exists
+  $buildDir = Split-Path -Parent $rollbackLogPath
+  if (-not (Test-Path $buildDir)) {
+    New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
+  }
+
+  # Write rollback log start
+  @{
+    timestamp = $timestamp
+    status = "in_progress"
+    plans = $Plans
+  } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $rollbackLogPath
+
+  # Execute moves
+  try {
+    foreach ($plan in $Plans) {
+      Info "Moving $($plan.name) to $($plan.scope) scope..."
+      Invoke-ConsolidateExecuteMove -Name $plan.name -FromPath $plan.fromPath -ToPath $plan.toPath
+      $completed += $plan
+    }
+  } catch {
+    # Rollback in reverse order
+    Write-Host "`n⚠️  Move failed, rolling back..." -ForegroundColor Red
+    for ($i = $completed.Count - 1; $i -ge 0; $i--) {
+      $plan = $completed[$i]
+      Invoke-ConsolidateRollbackMove -Name $plan.name -FromPath $plan.fromPath -ToPath $plan.toPath
+    }
+
+    # Write rollback log result
+    @{
+      timestamp = $timestamp
+      status = "failed"
+      completed = $completed | ForEach-Object { $_.name }
+      error = $_.Exception.Message
+    } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $rollbackLogPath
+
+    throw
+  }
+
+  # Backup registry before updates
+  $registryPath = $Config.registry
+  $registryBackup = "$registryPath.backup-$timestamp"
+  Copy-Item -LiteralPath $registryPath -Destination $registryBackup -Force
+
+  # Update registry with new paths
+  $registryData = if (Test-Path $registryPath) {
+    Get-Content -LiteralPath $registryPath -Raw | ConvertFrom-Json
+  } else {
+    @{ registry_version = 1; entries = @() }
+  }
+
+  foreach ($plan in $completed) {
+    $entry = $registryData.entries | Where-Object { $_.name -eq $plan.name } | Select-Object -First 1
+    if ($entry) {
+      $entry.path = $plan.toPath
+      $entry.scope = $plan.scope
+      $entry.updated_at = (Get-Date).ToUniversalTime().ToString('o')
+    } else {
+      # Add new entry
+      $registryData.entries += @{
+        name = $plan.name
+        path = $plan.toPath
+        scope = $plan.scope
+        shims = @()
+        updated_at = (Get-Date).ToUniversalTime().ToString('o')
+      }
+    }
+  }
+
+  # Save registry
+  try {
+    $tmpPath = "$registryPath.tmp"
+    $registryData | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $tmpPath
+    Move-Item -LiteralPath $tmpPath -Destination $registryPath -Force
+  } catch {
+    # Restore registry backup
+    Copy-Item -LiteralPath $registryBackup -Destination $registryPath -Force
+    throw "Failed to update registry: $_"
+  }
+
+  # Update chinvex contexts if chinvex is available
+  if (Has-Command "chinvex") {
+    try {
+      foreach ($plan in $completed) {
+        & chinvex context set $plan.name --scope $plan.scope --path $plan.toPath 2>&1 | Out-Null
+      }
+    } catch {
+      # Restore registry backup if chinvex fails
+      Copy-Item -LiteralPath $registryBackup -Destination $registryPath -Force
+      throw "Failed to update chinvex contexts: $_"
+    }
+  }
+
+  # Write rollback log result
+  @{
+    timestamp = $timestamp
+    status = "success"
+    completed = $completed | ForEach-Object { $_.name }
+  } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $rollbackLogPath
+
+  return @{
+    moved = $completed | ForEach-Object { $_.name }
+    rollbackLogPath = $rollbackLogPath
+  }
+}
+
 function Invoke-ConsolidateMigrationWorkflow {
   param(
     [string] $FromPath,
@@ -3190,7 +3362,7 @@ function Invoke-ConsolidateMigrationWorkflow {
   $snapshot | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $snapshotPath
   Info "Snapshot saved: $snapshotPath"
 
-  # Step 2: Discovery (scan for repos and adopt them)
+  # Step 2: Discovery
   Write-Host "`n[2/6] Discovering repositories..." -ForegroundColor Yellow
   $discovered = @()
 
@@ -3201,19 +3373,9 @@ function Invoke-ConsolidateMigrationWorkflow {
       if (Test-Path -LiteralPath $gitDir) {
         $repoName = $dir.Name
         Info "Found: $repoName"
-
-        # Adopt the repo if not in dry-run mode
-        if (-not $DryRun) {
-          try {
-            # Call Invoke-Adopt with the discovered path
-            Invoke-Adopt -TargetPath $dir.FullName -NonInteractive:$Yes -DryRunMode:$false -StrapRootPath $StrapRootPath
-            $discovered += @{ name = $repoName; path = $dir.FullName; adopted = $true }
-          } catch {
-            Warn "Failed to adopt $repoName : $_"
-            $discovered += @{ name = $repoName; path = $dir.FullName; adopted = $false; error = $_.Exception.Message }
-          }
-        } else {
-          $discovered += @{ name = $repoName; path = $dir.FullName; adopted = $false }
+        $discovered += @{
+          name = $repoName
+          sourcePath = $dir.FullName
         }
       }
     }
@@ -3226,8 +3388,72 @@ function Invoke-ConsolidateMigrationWorkflow {
 
   Info "Discovered $($discovered.Count) repositories"
 
-  # Step 3: Audit (check for external references)
-  Write-Host "`n[3/6] Auditing external references..." -ForegroundColor Yellow
+  # Step 3: Determine destinations and build move plans
+  Write-Host "`n[3/6] Planning moves..." -ForegroundColor Yellow
+  $softwareRoot = $config.roots.software
+  $toolsRoot = $config.roots.tools
+  $movePlans = @()
+
+  foreach ($repo in $discovered) {
+    # Determine scope (software vs tool) - use interactive prompt if not --yes
+    $scope = "software"  # default
+    if (-not $Yes) {
+      $choice = Read-Host "Where should '$($repo.name)' go? (s)oftware / (t)ool [s]"
+      if ($choice -eq "t") {
+        $scope = "tool"
+      }
+    }
+
+    $destPath = if ($scope -eq "tool") {
+      Join-Path $toolsRoot $repo.name
+    } else {
+      Join-Path $softwareRoot $repo.name
+    }
+
+    # Check for naming collisions
+    $existingEntry = $registry | Where-Object { $_.name.ToLowerInvariant() -eq $repo.name.ToLowerInvariant() }
+    if ($existingEntry) {
+      if (-not $Yes) {
+        Write-Host "  Name collision detected: '$($repo.name)' already exists in registry" -ForegroundColor Yellow
+        $newName = Read-Host "  Enter new name (or press Enter to skip)"
+        if ($newName) {
+          $repo.name = $newName
+          $destPath = if ($scope -eq "tool") {
+            Join-Path $toolsRoot $newName
+          } else {
+            Join-Path $softwareRoot $newName
+          }
+        } else {
+          Write-Host "  Skipping $($repo.name)" -ForegroundColor Yellow
+          continue
+        }
+      } else {
+        Warn "Skipping $($repo.name) - name collision in --yes mode"
+        continue
+      }
+    }
+
+    $movePlans += @{
+      name = $repo.name
+      fromPath = $repo.sourcePath
+      toPath = $destPath
+      scope = $scope
+    }
+  }
+
+  if ($movePlans.Count -eq 0) {
+    Info "No repositories to move after collision resolution"
+    return @{ executed = $false; manualFixes = @() }
+  }
+
+  # Show move plan
+  Write-Host "`nMove plan:" -ForegroundColor Cyan
+  foreach ($plan in $movePlans) {
+    Write-Host "  $($plan.name): $($plan.fromPath) → $($plan.toPath) [$($plan.scope)]" -ForegroundColor Gray
+  }
+
+  # Step 4: Audit for external references
+  Write-Host "`n[4/6] Auditing external references..." -ForegroundColor Yellow
   $auditWarnings = @()
 
   # Check for PM2 processes
@@ -3255,28 +3481,64 @@ function Invoke-ConsolidateMigrationWorkflow {
     }
   }
 
-  # Step 4: Preflight checks
-  Write-Host "`n[4/6] Running preflight checks..." -ForegroundColor Yellow
-
-  # Check disk space
+  # Step 5: Preflight checks
+  Write-Host "`n[5/6] Running preflight checks..." -ForegroundColor Yellow
   $sourceSize = Get-DirectorySize -Path $FromPath
   $sourceSizeMB = [math]::Round($sourceSize / 1MB, 2)
   Info "Source size: $sourceSizeMB MB"
 
-  # Check if dry-run
+  # Check for dirty worktrees
+  if (-not $AllowDirty) {
+    foreach ($plan in $movePlans) {
+      Push-Location $plan.fromPath
+      try {
+        $gitStatus = git status --porcelain 2>&1
+        if ($gitStatus) {
+          if (-not $Yes) {
+            $continue = Read-Host "$($plan.name) has uncommitted changes. Continue anyway? (y/n)"
+            if ($continue -ne "y") {
+              Pop-Location
+              Die "Aborted due to dirty worktree"
+            }
+          } else {
+            Warn "$($plan.name) has uncommitted changes but continuing due to --allow-dirty"
+          }
+        }
+      } finally {
+        Pop-Location
+      }
+    }
+  }
+
   if ($DryRun) {
     Write-Host "`n✅ DRY RUN complete - no changes made" -ForegroundColor Green
     Write-Host "   Repos discovered: $($discovered.Count)" -ForegroundColor Gray
+    Write-Host "   Repos planned: $($movePlans.Count)" -ForegroundColor Gray
     return @{ executed = $false; manualFixes = @() }
   }
 
-  # Step 5: Execute moves (already done via Invoke-Adopt)
-  Write-Host "`n[5/6] Repositories adopted..." -ForegroundColor Yellow
-  $adoptedCount = ($discovered | Where-Object { $_.adopted -eq $true }).Count
-  Info "Adopted $adoptedCount repositories"
+  # Step 6: Execute transaction
+  Write-Host "`n[6/6] Executing moves..." -ForegroundColor Yellow
 
-  # Step 6: Verify with doctor
-  Write-Host "`n[6/6] Running verification..." -ForegroundColor Yellow
+  if (-not $Yes) {
+    Write-Host "`n⚠️  This will move $($movePlans.Count) repositories and update the registry." -ForegroundColor Yellow
+    $confirm = Read-Host "Continue? (y/n)"
+    if ($confirm -ne "y") {
+      Die "Aborted by user"
+    }
+  }
+
+  try {
+    $result = Invoke-ConsolidateTransaction -Plans $movePlans -Config $config -Registry $registry -StrapRootPath $StrapRootPath
+    Info "Moved $($result.moved.Count) repositories"
+    Info "Rollback log: $($result.rollbackLogPath)"
+  } catch {
+    Write-Host "`n❌ Consolidation failed: $_" -ForegroundColor Red
+    throw
+  }
+
+  # Run doctor verification
+  Write-Host "`nRunning doctor verification..." -ForegroundColor Yellow
   try {
     Invoke-Doctor -StrapRootPath $StrapRootPath -OutputJson:$false
   } catch {
@@ -3285,15 +3547,13 @@ function Invoke-ConsolidateMigrationWorkflow {
 
   Write-Host "`n✅ Consolidation complete!" -ForegroundColor Green
 
-  # Show manual fixes if any repos failed
+  # Collect manual fixes
   $manualFixes = @()
-  $failed = $discovered | Where-Object { $_.adopted -eq $false -and $_.error }
-  if ($failed) {
+  if ($auditWarnings.Count -gt 0) {
     Write-Host "`n⚠️  Manual fixes required:" -ForegroundColor Yellow
-    foreach ($f in $failed) {
-      $msg = "Failed to adopt $($f.name): $($f.error)"
-      Write-Host "  - $msg" -ForegroundColor Yellow
-      $manualFixes += $msg
+    foreach ($w in $auditWarnings) {
+      Write-Host "  - $w" -ForegroundColor Yellow
+      $manualFixes += $w
     }
   }
 
