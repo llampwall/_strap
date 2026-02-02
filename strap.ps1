@@ -1172,6 +1172,231 @@ function Build-AuditIndex {
     return $index
 }
 
+function Invoke-Snapshot {
+    <#
+    .SYNOPSIS
+    Captures comprehensive environment snapshot with git metadata and external references
+
+    .PARAMETER ScanDirs
+    Array of directories to scan (defaults to C:\Code, P:\software, etc.)
+
+    .PARAMETER OutputPath
+    Path to write snapshot JSON file
+
+    .PARAMETER StrapRootPath
+    Path to strap root directory
+
+    .OUTPUTS
+    Hashtable with snapshot manifest structure
+    #>
+    param(
+        [Parameter()]
+        [string[]] $ScanDirs,
+
+        [Parameter(Mandatory)]
+        [string] $OutputPath,
+
+        [Parameter(Mandatory)]
+        [string] $StrapRootPath
+    )
+
+    Write-Host "Capturing environment snapshot..." -ForegroundColor Cyan
+
+    # Default scan directories
+    $defaultScanDirs = @("C:\Code", "P:\software", "C:\Users\$env:USERNAME\Documents\Code")
+    if ($ScanDirs.Count -eq 0) {
+        $ScanDirs = $defaultScanDirs | Where-Object { Test-Path $_ }
+    }
+
+    # Load registry
+    $config = Load-Config $StrapRootPath
+    $registryPath = $config.registry
+    $registry = $null
+    $registryVersion = 1
+
+    if (Test-Path $registryPath) {
+        try {
+            $registryContent = Get-Content $registryPath -Raw | ConvertFrom-Json
+            if ($registryContent.PSObject.Properties['entries']) {
+                # New format
+                $registry = $registryContent.entries
+                $registryVersion = $registryContent.version
+            } else {
+                # Legacy format
+                $registry = $registryContent
+            }
+        } catch {
+            Write-Warning "Failed to load registry: $_"
+            $registry = @()
+        }
+    } else {
+        $registry = @()
+    }
+
+    # Build registry lookup by path (case-insensitive)
+    $registryByPath = @{}
+    foreach ($entry in $registry) {
+        if ($entry.path) {
+            $registryByPath[$entry.path.ToLower()] = $entry.name
+        }
+    }
+
+    # Scan directories top-level
+    Write-Verbose "Scanning directories: $($ScanDirs -join ', ')"
+    $discovered = @()
+
+    foreach ($scanDir in $ScanDirs) {
+        if (-not (Test-Path $scanDir)) {
+            Write-Verbose "Skipping non-existent directory: $scanDir"
+            continue
+        }
+
+        $items = Get-ChildItem -Path $scanDir -ErrorAction SilentlyContinue
+
+        foreach ($item in $items) {
+            $itemPath = $item.FullName
+            $inRegistry = $registryByPath.ContainsKey($itemPath.ToLower())
+
+            if ($item.PSIsContainer) {
+                # Check if it's a git repo
+                $gitDir = Join-Path $itemPath ".git"
+                if (Test-Path $gitDir) {
+                    # Git repository
+                    $remoteUrl = $null
+                    $lastCommit = $null
+
+                    try {
+                        $remoteRaw = & git -C $itemPath remote get-url origin 2>&1
+                        if ($LASTEXITCODE -eq 0) {
+                            $remoteUrl = $remoteRaw.Trim()
+                            # Normalize remote URL
+                            if ($remoteUrl -match '^git@([^:]+):(.+)$') {
+                                $remoteUrl = "https://$($Matches[1])/$($Matches[2])"
+                            }
+                            $remoteUrl = $remoteUrl -replace '\.git$', ''
+                        }
+                    } catch {}
+
+                    try {
+                        $commitRaw = & git -C $itemPath log -1 --format=%cI 2>&1
+                        if ($LASTEXITCODE -eq 0) {
+                            $lastCommit = $commitRaw.Trim()
+                        }
+                    } catch {}
+
+                    $discovered += @{
+                        path = $itemPath
+                        name = $item.Name
+                        type = "git"
+                        in_registry = $inRegistry
+                        remote_url = $remoteUrl
+                        last_commit = $lastCommit
+                    }
+                } else {
+                    # Regular directory
+                    $discovered += @{
+                        path = $itemPath
+                        name = $item.Name
+                        type = "directory"
+                        in_registry = $inRegistry
+                    }
+                }
+            } else {
+                # File
+                $discovered += @{
+                    path = $itemPath
+                    name = $item.Name
+                    type = "file"
+                }
+            }
+        }
+    }
+
+    # Collect external references
+    Write-Verbose "Collecting external references..."
+    $repoPaths = @($registry | Where-Object { $_.path } | ForEach-Object { $_.path })
+
+    $externalRefs = @{
+        pm2 = @()
+        scheduled_tasks = @()
+        shims = @()
+        path_entries = @()
+        profile_refs = @()
+    }
+
+    # PM2 processes
+    if (Has-Command "pm2") {
+        try {
+            $pm2List = & pm2 jlist 2>$null | ConvertFrom-Json -ErrorAction SilentlyContinue
+            foreach ($proc in $pm2List) {
+                if ($proc.pm2_env.pm_cwd) {
+                    $externalRefs.pm2 += @{
+                        name = $proc.name
+                        cwd = $proc.pm2_env.pm_cwd
+                    }
+                }
+            }
+        } catch {}
+    }
+
+    # Only collect references if we have repos to check
+    if ($repoPaths.Count -gt 0) {
+        # Scheduled tasks
+        $externalRefs.scheduled_tasks = Get-ScheduledTaskReferences -RepoPaths $repoPaths
+
+        # Shims
+        $shimDir = Join-Path $StrapRootPath "build\shims"
+        $externalRefs.shims = Get-ShimReferences -ShimDir $shimDir -RepoPaths $repoPaths
+
+        # PATH entries
+        $externalRefs.path_entries = Get-PathReferences -RepoPaths $repoPaths
+
+        # Profile references
+        $externalRefs.profile_refs = Get-ProfileReferences -RepoPaths $repoPaths
+    }
+
+    # Get disk usage
+    $diskUsage = @{}
+    try {
+        $drives = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Root -match '^[A-Z]:\\$' }
+        foreach ($drive in $drives) {
+            $diskUsage[$drive.Name + ":"] = @{
+                total_gb = [Math]::Round($drive.Used / 1GB + $drive.Free / 1GB, 2)
+                free_gb = [Math]::Round($drive.Free / 1GB, 2)
+            }
+        }
+    } catch {
+        Write-Verbose "Failed to get disk usage: $_"
+    }
+
+    # Build snapshot manifest
+    $manifest = @{
+        timestamp = (Get-Date).ToUniversalTime().ToString("o")
+        registry = @{
+            version = $registryVersion
+            entries = $registry
+        }
+        discovered = $discovered
+        external_refs = $externalRefs
+        disk_usage = $diskUsage
+    }
+
+    # Write to output file
+    try {
+        $outputDir = Split-Path $OutputPath -Parent
+        if ($outputDir -and -not (Test-Path $outputDir)) {
+            New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+        }
+
+        $manifest | ConvertTo-Json -Depth 10 | Set-Content $OutputPath -Encoding UTF8
+        Write-Host "Snapshot written to: $OutputPath" -ForegroundColor Green
+    } catch {
+        Write-Error "Failed to write snapshot to $OutputPath`: $_"
+    }
+
+    return $manifest
+}
+
 function Should-ExcludePath($fullPath, $root) {
   $rel = $fullPath.Substring($root.Length).TrimStart('\\','/')
   if (-not $rel) { return $false }
@@ -4137,6 +4362,27 @@ if ($RepoName -eq "consolidate") {
     exit 1
   }
 
+  exit 0
+}
+
+if ($RepoName -eq "snapshot") {
+  # Parse --output and --scan flags
+  $outputPath = "build/snapshot.json"
+  $scanDirs = @()
+
+  for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
+    if ($ExtraArgs[$i] -eq "--output" -and ($i + 1) -lt $ExtraArgs.Count) {
+      $outputPath = $ExtraArgs[$i + 1]
+      $i++
+      continue
+    }
+    if ($ExtraArgs[$i] -eq "--scan" -and ($i + 1) -lt $ExtraArgs.Count) {
+      $scanDirs += $ExtraArgs[$i + 1]
+      $i++
+    }
+  }
+
+  Invoke-Snapshot -ScanDirs $scanDirs -OutputPath $outputPath -StrapRootPath $TemplateRoot
   exit 0
 }
 
