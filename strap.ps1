@@ -726,6 +726,72 @@ function Get-TemplateNameFromArgs([string[]] $ArgsList) {
   return $null
 }
 
+function Get-ScheduledTaskReferences {
+    <#
+    .SYNOPSIS
+    Detects Windows scheduled tasks that reference repository paths
+
+    .PARAMETER RepoPaths
+    Array of repository paths to check for references
+
+    .OUTPUTS
+    Array of hashtables with 'name' and 'path' properties
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $RepoPaths
+    )
+
+    try {
+        # Get all scheduled tasks as CSV
+        $csv = & schtasks /query /fo csv /v 2>$null
+        if (-not $csv) { return @() }
+
+        # Parse CSV output
+        $tasks = $csv | ConvertFrom-Csv -ErrorAction SilentlyContinue
+        if (-not $tasks) { return @() }
+
+        # Normalize repo paths for comparison
+        $normalizedRepoPaths = $RepoPaths | ForEach-Object {
+            $_.Replace('/', '\').TrimEnd('\').ToLower()
+        }
+
+        # Scan each task for path references
+        $references = @()
+        foreach ($task in $tasks) {
+            # Combine task name, command, and arguments for path extraction
+            $searchText = "$($task.TaskName) $($task.'Task To Run')"
+
+            # Extract Windows paths (e.g., C:\path\to\file)
+            $pathMatches = [regex]::Matches($searchText, '[A-Za-z]:\\[^\s,\"]+')
+
+            foreach ($match in $pathMatches) {
+                $extractedPath = $match.Value.TrimEnd('\').ToLower()
+
+                # Check if path starts with any repo path
+                $matchesRepo = $normalizedRepoPaths | Where-Object {
+                    $extractedPath.StartsWith($_)
+                }
+
+                if ($matchesRepo) {
+                    $references += @{
+                        name = $task.TaskName
+                        path = $match.Value
+                    }
+                    break  # Only add task once even if multiple paths match
+                }
+            }
+        }
+
+        return $references
+
+    } catch {
+        # schtasks failed or not available - return empty array
+        Write-Verbose "Failed to query scheduled tasks: $_"
+        return @()
+    }
+}
+
 function Should-ExcludePath($fullPath, $root) {
   $rel = $fullPath.Substring($root.Length).TrimStart('\\','/')
   if (-not $rel) { return $false }
