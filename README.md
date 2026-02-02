@@ -1,6 +1,6 @@
 # strap
 
-Complete Windows dev environment manager with two halves:
+Complete Windows dev environment manager with three capabilities:
 
 **1. Template bootstrapping** — spin up new projects from templates (node-ts-service, mono, python, etc.) with deps installed and ready to code.
 
@@ -12,6 +12,14 @@ Complete Windows dev environment manager with two halves:
 - Update all your tools at once (`--all` flag)
 - Uninstall cleanly (removes folder + shims + registry entry)
 - Schema versioning means it won't brick itself as it evolves
+
+**3. Environment consolidation** — migrate scattered repos:
+- Guided wizard (`strap consolidate`) moves entire directories of repos
+- Automatic discovery and adoption with scope classification
+- Path dependency scanning (audit) catches breaking references
+- External reference detection (PM2, scheduled tasks, shims, PATH, profiles)
+- Safe cross-volume moves with git integrity verification
+- Rollback on failure, actionable fix list on success
 
 **What makes it special:** Single front door for your dev tools. Instead of scattered `git clone` + manual PATH edits + "where did I put that script?", everything goes through strap.
 
@@ -64,6 +72,19 @@ strap update --all --tool
 strap doctor
 ```
 
+### Consolidation (Migrate Existing Repos)
+
+```powershell
+# consolidate an entire directory of repos into P:\software (guided wizard)
+strap consolidate --from "C:\Code"
+
+# preview what would happen without executing
+strap consolidate --from "C:\Code" --dry-run
+
+# automatic mode (no prompts, auto-stop PM2 if needed)
+strap consolidate --from "C:\Code" --yes --stop-pm2
+```
+
 ## Usage
 
 ### Template Bootstrapping
@@ -85,6 +106,7 @@ strap open <name>
 strap move <name> --dest <path> [--yes] [--dry-run] [--force] [--rehome-shims]
 strap rename <name> --to <newName> [--yes] [--dry-run] [--move-folder] [--force]
 strap adopt [--path <dir>] [--name <name>] [--tool|--software] [--yes] [--dry-run]
+strap adopt --scan <dir> [--recursive] [--dry-run] [--yes] [--allow-auto-archive] [--scope <tool|software|archive>]
 strap setup [--yes] [--dry-run] [--stack python|node|go|rust] [--repo <name>]
 strap setup [--venv <path>] [--uv] [--python <exe>] [--pm npm|pnpm|yarn] [--corepack]
 strap update <name> [--yes] [--dry-run] [--rebase] [--stash] [--setup]
@@ -92,8 +114,12 @@ strap update --all [--tool] [--software] [--yes] [--dry-run] [--rebase] [--stash
 strap shim <name> --- <command...> [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
 strap shim <name> --cmd "<command>" [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
 strap uninstall <name> [--yes]
-strap doctor [--json]
+strap doctor [--json] [--fix-paths] [--fix-orphans]
 strap migrate [--yes] [--dry-run] [--backup] [--json] [--to <version>] [--plan]
+strap snapshot [--output <path>] [--scan <dir>...]
+strap audit <name|--all> [--json] [--rebuild-index]
+strap archive <name> [--yes] [--dry-run]
+strap consolidate --from <dir> [--to <root>] [--dry-run] [--yes] [--stop-pm2] [--ack-scheduled-tasks] [--allow-dirty] [--allow-auto-archive]
 ```
 
 ### Parameters
@@ -142,6 +168,10 @@ strap migrate [--yes] [--dry-run] [--backup] [--json] [--to <version>] [--plan]
 - `--software` — force scope=software
 - `--yes` — skip confirmation prompts
 - `--dry-run` — preview only, no registry write
+- `--scan <dir>` — discover and adopt all items in directory (top-level by default)
+- `--recursive` — search subdirectories when scanning
+- `--allow-auto-archive` — with `--yes`, apply archive suggestions automatically
+- `--scope <tool|software|archive>` — override scope heuristic for all discovered items
 
 **setup**
 - `--repo <name>` — run setup for a registered repo (changes to its directory)
@@ -179,6 +209,8 @@ strap migrate [--yes] [--dry-run] [--backup] [--json] [--to <version>] [--plan]
 
 **doctor**
 - `--json` — output structured JSON instead of human-readable format
+- `--fix-paths` — automatically fix registry entries with invalid paths using disk discovery
+- `--fix-orphans` — remove registry entries where the repo folder no longer exists
 
 **migrate**
 - `--yes` — skip confirmation prompts
@@ -187,6 +219,31 @@ strap migrate [--yes] [--dry-run] [--backup] [--json] [--to <version>] [--plan]
 - `--json` — output structured JSON report instead of human-readable format
 - `--to <version>` — migrate to specific version (default: latest)
 - `--plan` — show migration plan without executing
+
+**snapshot**
+- `--output <path>` — output path for snapshot JSON (default: `build/snapshot.json`)
+- `--scan <dir>` — directory to scan for repos (can be repeated, defaults to common locations)
+
+**audit**
+- `<name>` — registry entry name to audit
+- `--all` — audit all registered repos
+- `--json` — output structured JSON instead of human-readable format
+- `--rebuild-index` — force rebuild of audit index (otherwise uses cached data when valid)
+
+**archive**
+- `<name>` — registered repo name to archive
+- `--yes` — skip confirmation prompts
+- `--dry-run` — preview without executing
+
+**consolidate**
+- `--from <dir>` — source directory to consolidate (required)
+- `--to <root>` — override destination root (default: from config based on scope)
+- `--dry-run` — run Steps 1-4 (plan only), don't execute moves
+- `--yes` — skip interactive prompts (uses heuristic defaults)
+- `--stop-pm2` — automatically stop affected PM2 services during migration
+- `--ack-scheduled-tasks` — acknowledge scheduled task warnings
+- `--allow-dirty` — allow repos with uncommitted changes
+- `--allow-auto-archive` — with `--yes`, apply archive suggestions automatically
 
 ### Examples
 
@@ -333,6 +390,36 @@ strap shim serve --cmd "python -m http.server 8080 --bind 127.0.0.1"
 
 # Uninstall a registered repo (removes directory and shims)
 strap uninstall youtube-md --yes
+
+# Discover and adopt all repos in a directory
+strap adopt --scan C:\Code --recursive
+
+# Create a snapshot before major changes
+strap snapshot --output pre-migration.json --scan C:\Code --scan P:\software
+
+# Audit a single repo for path dependencies
+strap audit chinvex
+
+# Audit all repos and rebuild index
+strap audit --all --rebuild-index
+
+# Archive an old project
+strap archive old-experiment --yes
+
+# Consolidate an entire directory (guided wizard)
+strap consolidate --from "C:\Code"
+
+# Consolidate with automatic mode (no prompts)
+strap consolidate --from "C:\Code" --yes --stop-pm2
+
+# Preview consolidation without executing
+strap consolidate --from "C:\Code" --dry-run
+
+# Fix registry paths that drifted
+strap doctor --fix-paths
+
+# Remove orphaned registry entries
+strap doctor --fix-orphans
 ```
 
 ## What Strap Does
@@ -358,7 +445,7 @@ Strap has two modes:
 ### Lifecycle management (existing repo/tool)
 
 - `clone`: clone a GitHub repo into `P:\software\...` or `P:\software\_scripts\...` and register it
-- `adopt`: register a repo you already cloned manually
+- `adopt`: register a repo you already cloned manually (or bulk-discover with `--scan`)
 - `setup`: detect stack and run an allowlisted install plan (python/node/go/rust; docker = detect only)
 - `shim`: generate a `.cmd` launcher in your shims dir and attach it to the registry entry
 - `update`: pull latest changes (single or `--all`, supports `--rebase`, `--stash`, optional `--setup`)
@@ -367,16 +454,33 @@ Strap has two modes:
 - `uninstall`: remove shims + folder + registry entry
 - `list`: show all registered repos
 - `open`: open a registered repo's folder in File Explorer
-- `doctor`: diagnose strap + registry health
+- `doctor`: diagnose strap + registry health (includes `--fix-paths` and `--fix-orphans` modes)
 - `migrate`: upgrade registry schema safely (backfills required fields, enforces invariants)
+
+### Consolidation workflow (migrate scattered repos)
+
+- `snapshot`: create a JSON manifest of current dev environment (registry, discovered repos, external refs, disk space)
+- `audit`: scan for path dependencies (inbound/outbound) and external references (PM2, scheduled tasks, shims, PATH, profiles)
+- `archive`: move old/inactive repos to archive location and update scope
+- `consolidate`: guided wizard for full migration (snapshot → discovery → audit → preflight → execute → verify)
 
 ### Registry System
 
-Lifecycle management uses a JSON registry at `build/registry.json` to track all cloned repos and their associated shims. Each entry includes:
+Lifecycle management uses a JSON registry at `build/registry.json` to track all cloned repos and their associated shims.
 
+**Registry metadata (V2):**
+- `registry_version` — schema version (current: 2)
+- `updated_at` — ISO 8601 timestamp of last registry update
+- `metadata.trust_mode` — "registry-first" (default) or "disk-discovery" (recovery mode)
+
+**Trust modes:**
+- **registry-first** (default): Registry paths are assumed correct, disk is validated against registry. Commands like `move`, `rename`, `archive`, `consolidate` require registry to be accurate. If drift detected → fail with error, suggest `strap doctor --fix-paths`.
+- **disk-discovery** (recovery mode): Used by `strap snapshot` and `strap adopt --scan` to discover repos on disk regardless of registry state.
+
+**Each entry includes:**
 - `id` — unique identifier
 - `name` — repo name (used for commands)
-- `scope` — "tool" or "software"
+- `scope` — "tool", "software", or "archive"
 - `path` — absolute path to the cloned repository
 - `url` — git remote URL (if available)
 - `shims` — array of shim file paths
@@ -388,12 +492,16 @@ Lifecycle management uses a JSON registry at `build/registry.json` to track all 
 - `stack_detected` — detected stack type (added by `strap setup`)
 - `setup_last_run_at` — ISO 8601 timestamp of last setup (added by `strap setup`)
 - `setup_status` — setup execution status: "success" or "fail" (added by `strap setup`)
+- `archived_at` — ISO 8601 timestamp when moved to archive (null if not archived)
+- `last_commit` — git commit hash for audit index optimization (null if not a git repo)
 
 The registry enables:
 - Tracking which repos have been cloned
 - Associating shims with their parent repos
 - Safe cleanup during uninstall (removes repo + all shims)
 - Quick listing of all managed repos
+- Path dependency tracking via audit index
+- Consolidation workflow state management
 
 ### Known Limitations
 
@@ -536,8 +644,214 @@ strap rename myproject --to my-project --move-folder --dry-run
 - Checks if shims_root is in PATH
 - Checks availability and versions of required tools (git, pwsh, python, uv, node toolchain, go, rust)
 - Validates registry integrity (JSON validity, required fields, path/shim existence, duplicates)
+- Checks for registry-disk drift (repos in registry but not on disk, or vice versa)
 - Reports status: OK (all good), WARN (non-critical issues), or FAIL (critical issues)
 - Use `--json` for structured output instead of human-readable format
+
+**Fix modes:**
+
+- `--fix-paths` — Automatically fix registry entries with invalid paths using disk discovery. Searches managed roots for repos with matching names/remotes and updates registry paths.
+- `--fix-orphans` — Remove registry entries where the repo folder no longer exists on disk.
+
+**Trust mode support:**
+
+- Default (registry-first): Validates disk against registry, reports drift
+- With `--fix-paths` or `--fix-orphans`: Uses disk-discovery mode to reconcile registry with actual disk state
+
+## Snapshot
+
+`strap snapshot` creates a JSON manifest of your current dev environment state before migration or major changes. It's a metadata-only safety net - not a file backup, just a map of what's where.
+
+**What it captures:**
+- Current registry entries
+- Discovered git repos (including those not in registry)
+- Non-git directories and standalone files
+- External references:
+  - PM2 services (via `pm2 jlist`)
+  - Windows scheduled tasks
+  - Shims in your shims directory
+  - PATH entries pointing to repos
+  - Shell profile references (`$PROFILE`, `.bashrc`, `.bash_profile`)
+- Disk space on all relevant drives
+
+**Usage:**
+
+```powershell
+# Create snapshot with default locations
+strap snapshot
+
+# Custom output path and scan directories
+strap snapshot --output pre-migration.json --scan C:\Code --scan P:\software
+```
+
+**Limitations:**
+- Does NOT detect: NSSM services, VS Code workspace settings, dynamic path construction, running processes
+- User must manually audit additional integrations
+- User must close IDEs and terminals before consolidation
+
+## Adopt (Enhanced)
+
+`strap adopt` registers existing repos with the strap registry. It now supports bulk discovery mode to scan entire directories.
+
+**Single repo adoption** (original behavior):
+```powershell
+# Adopt current directory
+cd P:\software\existing-repo
+strap adopt
+
+# Adopt with custom name and scope
+strap adopt --path P:\software\my-repo --name custom-name --tool --yes
+```
+
+**Bulk discovery mode** (new):
+```powershell
+# Discover and adopt all items in directory (top-level only)
+strap adopt --scan C:\Code
+
+# Recursive scan
+strap adopt --scan C:\Code --recursive
+
+# Automatic mode with heuristic defaults
+strap adopt --scan C:\Code --recursive --yes
+
+# Override scope for all discovered items
+strap adopt --scan C:\Code --scope software --yes
+```
+
+**Classification heuristics:**
+- **Git repos:**
+  - Single script + README → suggests `tool`
+  - Inactive (last commit >180 days) + no references + no uncommitted changes → suggests `archive`
+  - Otherwise → suggests `software`
+- **Non-git directories:**
+  - Mostly scripts (`.ps1`, `.py`, `.js`, `.sh`) → suggests `tool`
+  - Inactive (last modified >180 days) → suggests `archive`
+  - Otherwise → prompts for classification
+- **Standalone files:** Surfaced in report but skipped by default
+
+**Safety features:**
+- Skips repos already in registry
+- With `--yes`: never auto-archives unless `--allow-auto-archive` is also provided
+- Validates paths before writing to registry
+
+## Audit
+
+`strap audit` scans for path dependencies that would break when repos are moved. It checks both outbound (what this repo depends on) and inbound (what depends on this repo) references.
+
+**Scan coverage:**
+- File types: `*.ps1`, `*.cmd`, `*.bat`, `*.ts`, `*.js`, `*.mjs`, `*.py`, `*.json`, `*.yaml`, `*.yml`, `.env*`
+- Exclusions: `node_modules/`, `venv/`, `.git/`, binaries, images, archives
+- External references: PM2 services, scheduled tasks, shims, PATH entries, shell profiles
+
+**Usage:**
+
+```powershell
+# Audit a single repo
+strap audit chinvex
+
+# Audit all registered repos (uses cached index for performance)
+strap audit --all
+
+# Force rebuild of audit index
+strap audit --all --rebuild-index
+
+# Get structured JSON output
+strap audit --all --json
+```
+
+**Index optimization:**
+- First run: scans all repos and builds index at `build/audit-index.json`
+- Subsequent runs: uses cached data for repos where commit hash hasn't changed
+- Automatic invalidation when registry changes or repo content changes
+
+**Known limitations (IMPORTANT):**
+- Does NOT detect dynamically constructed paths (string concatenation, template literals)
+- Does NOT detect paths in compressed files or databases
+- Does NOT detect embedded configs in binaries
+- False positives possible for path-like strings in docs
+- **Audit is a discovery tool, not a complete safety guarantee** - always manually review output
+
+## Archive
+
+`strap archive` moves a repo to the archive location (`P:\software\_archive\` by default) and updates its scope to `archive`.
+
+**How it works:**
+1. Moves the repo to archive root (equivalent to `strap move <name> --dest P:\software\_archive\`)
+2. Updates scope to `archive` in registry
+3. Updates chinvex contexts (removes from individual/tools, adds to shared archive)
+
+**Filtering behavior:**
+- Archived repos are excluded from `strap update --all`
+- Archived repos appear in `strap list --all` but not `strap list`
+- `strap doctor` validates archived repos with lower priority
+
+**Usage:**
+
+```powershell
+# Archive a project
+strap archive old-experiment --yes
+
+# Preview before archiving
+strap archive old-experiment --dry-run
+```
+
+## Consolidate
+
+`strap consolidate` is the single entrypoint for migrating entire directories of repos. It runs as a guided wizard that walks through every step: snapshot, discovery, audit, preflight, execution, and verification.
+
+**Wizard Steps:**
+
+1. **Snapshot** - Save current state to `build/consolidate-snapshot-{timestamp}.json`
+2. **Discovery & Adoption** - Scan source directory and register all discovered repos
+3. **Audit** - Check for path dependencies and external references
+4. **Preflight** - Verify disk space, check for collisions, detect PM2/scheduled tasks
+5. **Execute** - Move repos, update registry, update chinvex contexts, restart PM2
+6. **Verify** - Run `strap doctor`, show manual fix list
+
+**Usage:**
+
+```powershell
+# Interactive wizard (recommended first time)
+strap consolidate --from "C:\Code"
+
+# Automatic mode (uses heuristic defaults, no prompts)
+strap consolidate --from "C:\Code" --yes --stop-pm2
+
+# Preview without executing (runs Steps 1-4 only)
+strap consolidate --from "C:\Code" --dry-run
+
+# Allow repos with uncommitted changes
+strap consolidate --from "C:\Code" --allow-dirty
+
+# Auto-archive old repos during discovery
+strap consolidate --from "C:\Code" --yes --allow-auto-archive
+```
+
+**Preflight checks:**
+- Target roots exist and are writable
+- Sufficient free space (source size + 20% safety margin)
+- No destination path collisions (case-insensitive)
+- PM2 services check (requires `--stop-pm2` if affected services found)
+- Scheduled tasks check (requires `--ack-scheduled-tasks` if detected)
+- Git worktrees check (fails if detected)
+- Working tree cleanliness (can override with `--allow-dirty`)
+
+**Safety features:**
+- Creates rollback log at `build/consolidate-rollback-{timestamp}.json`
+- Verifies git integrity after cross-volume copies (`git fsck`, object count, hash)
+- Rolls back on first error (deletes destination copies, restores registry)
+- Only updates registry after all moves succeed
+- PM2 services: stops only affected services, restarts after success
+- Transaction safety: rolls back registry if chinvex update fails
+
+**Verification scope:**
+- Git object database only (commit history, branches, tags)
+- Does NOT verify: LFS content, submodules, working tree files affected by git filters/hooks
+
+**After consolidation:**
+- Manually update shell profiles, PATH entries, scheduled tasks (consolidate shows exact instructions)
+- Source directory will be empty - safe to delete
+- Run `strap doctor` anytime to verify registry consistency
 
 ## Templatize
 
