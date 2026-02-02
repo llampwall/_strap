@@ -248,6 +248,21 @@ function Load-Config($strapRoot) {
     Die "Config not found: $configPath"
   }
   $json = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+
+  # Apply chinvex integration defaults (new fields)
+  if ($null -eq $json.chinvex_integration) {
+    $json | Add-Member -NotePropertyName chinvex_integration -NotePropertyValue $true -Force
+  }
+  if ($null -eq $json.chinvex_whitelist) {
+    $json | Add-Member -NotePropertyName chinvex_whitelist -NotePropertyValue @("tools", "archive") -Force
+  }
+  if ($null -eq $json.software_root) {
+    $json | Add-Member -NotePropertyName software_root -NotePropertyValue "P:\software" -Force
+  }
+  if ($null -eq $json.tools_root) {
+    $json | Add-Member -NotePropertyName tools_root -NotePropertyValue "P:\software\_scripts" -Force
+  }
+
   return $json
 }
 
