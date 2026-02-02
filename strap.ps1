@@ -3902,7 +3902,39 @@ function Invoke-ConsolidateMigrationWorkflow {
   Write-Host "`n[4/6] Auditing external references..." -ForegroundColor Yellow
   $auditWarnings = @()
 
-  # Check for PM2 processes
+  # Determine repo paths to check
+  $repoPaths = @($FromPath)
+
+  # 1. Check scheduled tasks
+  Write-Verbose "Checking scheduled tasks..."
+  $scheduledTasks = Get-ScheduledTaskReferences -RepoPaths $repoPaths
+  foreach ($task in $scheduledTasks) {
+    $auditWarnings += "Scheduled task '$($task.name)' references $($task.path)"
+  }
+
+  # 2. Check shims
+  Write-Verbose "Checking shims..."
+  $shimDir = Join-Path $StrapRootPath "build\shims"
+  $shims = Get-ShimReferences -ShimDir $shimDir -RepoPaths $repoPaths
+  foreach ($shim in $shims) {
+    $auditWarnings += "Shim '$($shim.name)' targets $($shim.target)"
+  }
+
+  # 3. Check PATH environment variables
+  Write-Verbose "Checking PATH entries..."
+  $pathRefs = Get-PathReferences -RepoPaths $repoPaths
+  foreach ($pathRef in $pathRefs) {
+    $auditWarnings += "PATH entry: $($pathRef.path)"
+  }
+
+  # 4. Check PowerShell profile
+  Write-Verbose "Checking PowerShell profile..."
+  $profileRefs = Get-ProfileReferences -RepoPaths $repoPaths
+  foreach ($profileRef in $profileRefs) {
+    $auditWarnings += "Profile reference: $($profileRef.path)"
+  }
+
+  # 5. Check PM2 processes (existing check)
   if (Has-Command "pm2") {
     try {
       $pm2List = & pm2 jlist 2>$null | ConvertFrom-Json -ErrorAction SilentlyContinue
@@ -3916,6 +3948,40 @@ function Invoke-ConsolidateMigrationWorkflow {
     }
   }
 
+  # 6. Build audit index for hardcoded path references
+  Write-Verbose "Building audit index..."
+  $indexPath = Join-Path $StrapRootPath "build\audit-index.json"
+  $registryPath = Join-Path $StrapRootPath "registry-v2.json"
+
+  if (Test-Path $registryPath) {
+    try {
+      $registryData = Get-Content $registryPath -Raw | ConvertFrom-Json
+      $registryUpdatedAt = $registryData.updated_at
+
+      # Convert DateTime to string if needed
+      if ($registryUpdatedAt -is [DateTime]) {
+        $registryUpdatedAt = $registryUpdatedAt.ToUniversalTime().ToString("o")
+      }
+
+      $auditIndex = Build-AuditIndex -IndexPath $indexPath -RebuildIndex $false `
+        -RegistryUpdatedAt $registryUpdatedAt -Registry $registryData.entries
+
+      # Check if any repos have hardcoded references to $FromPath
+      foreach ($repoPath in $auditIndex.repos.Keys) {
+        $refs = $auditIndex.repos[$repoPath].references
+        foreach ($ref in $refs) {
+          # Parse reference format: filepath:linenum
+          if ($ref -match [regex]::Escape($FromPath)) {
+            $auditWarnings += "Hardcoded path in $ref"
+          }
+        }
+      }
+    } catch {
+      Write-Warning "Failed to build audit index: $_"
+    }
+  }
+
+  # Display warnings and enforce --ack-scheduled-tasks flag
   if ($auditWarnings.Count -gt 0) {
     Warn "External references detected:"
     foreach ($w in $auditWarnings) {
@@ -3925,6 +3991,10 @@ function Invoke-ConsolidateMigrationWorkflow {
     if (-not $AckScheduledTasks) {
       Die "External references detected. Re-run with --ack-scheduled-tasks to continue."
     }
+
+    Write-Host "`nProceeding with --ack-scheduled-tasks flag set." -ForegroundColor Yellow
+  } else {
+    Write-Host "No external references detected." -ForegroundColor Green
   }
 
   # Step 5: Preflight checks
