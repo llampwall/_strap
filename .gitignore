@@ -18,8 +18,10 @@ htmlcov/
 hybrid.db
 chroma/
 
-# Local configs - CRITICAL: registry.json and config.json are strap's state
+# Local configs
 /*.json
+!config.json
+!registry.json
 *.local.json
 *.local.toml
 *.env
