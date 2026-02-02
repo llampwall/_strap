@@ -9,7 +9,7 @@
 
 Two independent systems track repositories without coordination:
 
-- **Strap** maintains a registry (`build/registry.json`) of all cloned repos, providing lifecycle management (clone, setup, update, move, rename, uninstall)
+- **Strap** maintains a registry (`registry.json`) of all cloned repos, providing lifecycle management (clone, setup, update, move, rename, uninstall)
 - **Chinvex** maintains context configs (`P:\ai_memory\contexts\{name}\context.json`) for semantic search, requiring repo paths for ingestion
 
 **Current pain:** Users must manually register repos in both systems. Changes in one (moving a repo via strap, adding a path to chinvex) don't propagate to the other. This creates:
@@ -65,8 +65,9 @@ Strap will shell out to `chinvex` CLI (assumes chinvex is globally available via
 
 2. **`chinvex context exists {name}`**
    - Checks if context exists
-   - Returns exit code 0 if exists, 1 if not
+   - Exit codes: `0` = exists, `1` = not found, `2+` = error (chinvex broken)
    - No output (silent check)
+   - Strap should treat exit code 1 as expected (context doesn't exist), exit code 2+ as chinvex failure
 
 3. **`chinvex context rename {old} --to {new}`**
    - Renames context directory and updates context.json name field
@@ -88,6 +89,11 @@ Strap will shell out to `chinvex` CLI (assumes chinvex is globally available via
 6. **`chinvex context remove-repo {context} --repo {path}`**
    - Removes repo path from context includes
    - Succeeds silently if path not in includes (idempotent)
+   - Returns exit code 0 on success, non-zero on failure
+
+7. **`chinvex context list [--json]`**
+   - Lists all contexts with metadata: name, repo count, last ingest timestamp
+   - With `--json`: machine-readable output for `strap contexts` to consume
    - Returns exit code 0 on success, non-zero on failure
 
 **Example invocations:**
@@ -141,8 +147,8 @@ chinvex context remove-repo tools --repo "P:\software\_scripts\oldtool"
 **`strap move {name} --dest {path}`:**
 
 **Pre-flight validation (before filesystem move):**
-- `software_root` = `P:\software` (from `build/config.json` or default)
-- `tools_root` = `P:\software\_scripts` (from `build/config.json` or default)
+- `software_root` = `P:\software` (from `config.json` or default)
+- `tools_root` = `P:\software\_scripts` (from `config.json` or default)
 - Validate destination is under `software_root` or `tools_root`
 - If destination is outside both roots: **fail immediately** (no filesystem changes)
 
@@ -150,8 +156,9 @@ chinvex context remove-repo tools --repo "P:\software\_scripts\oldtool"
 1. Move repo folder to destination
 2. Update registry `path` field to new location
 3. **NEW:** Detect scope change based on destination path:
+   - **Most specific path match wins** (e.g., `P:\software\_scripts` matches before `P:\software` for paths under `_scripts`)
    - If destination is under `tools_root` and current scope is `software`: scope becomes `tool`
-   - If destination is under `software_root` and current scope is `tool`: scope becomes `software`
+   - If destination is under `software_root` (but NOT under `tools_root`) and current scope is `tool`: scope becomes `software`
 4. **NEW:** If scope changed:
    - **Order: create → add → remove (rollback-safe)**
    - If new scope is `software`, create individual context: `chinvex context create {name} --idempotent`
@@ -185,6 +192,9 @@ chinvex context remove-repo tools --repo "P:\software\_scripts\oldtool"
 1. Rename registry entry (+ optionally folder)
 2. **NEW:** If `scope=software`, invoke `chinvex context rename {oldName} --to {newName}`
 3. **NEW:** If `scope=tool`, no chinvex action (stays in `tools` context)
+4. **NEW:** If `--move-folder` was used (folder path changed), update repo path in chinvex context:
+   - Add new path: `chinvex ingest --context {newName} --repo {new_path} --register-only`
+   - Remove old path: `chinvex context remove-repo {newName} --repo {old_path}`
 
 **`strap uninstall {name}`:**
 1. Remove shims
@@ -204,7 +214,7 @@ chinvex context remove-repo tools --repo "P:\software\_scripts\oldtool"
 strap clone https://github.com/user/repo --no-chinvex
 ```
 
-**Global config:** Add `build/config.json` with integration toggle:
+**Global config:** Add `config.json` with integration toggle:
 
 ```json
 {
@@ -214,8 +224,8 @@ strap clone https://github.com/user/repo --no-chinvex
 
 **Precedence (highest to lowest):**
 1. Explicit `--no-chinvex` flag (overrides config)
-2. Explicit `--chinvex` flag (future: force enable even if config disabled)
-3. `build/config.json` value
+2. Explicit `--chinvex` flag (**deferred** — not implemented in this spec)
+3. `config.json` value
 4. Default (enabled)
 
 **Note:** `strap sync-chinvex` ALWAYS runs regardless of config/flags (it's explicitly for chinvex management).
@@ -236,6 +246,7 @@ strap contexts
 
 **`strap sync-chinvex [--dry-run] [--reconcile]`** - reconcile strap registry with chinvex contexts:
 
+- No flags (default): equivalent to `--dry-run` (safe — shows drift without making changes)
 - `--dry-run`: Show what would change without making changes
 - `--reconcile`: Apply reconciliation actions:
   - **Missing contexts:** Create contexts for strap entries that have `chinvex_context: null`
@@ -257,7 +268,7 @@ strap contexts
 
 **Whitelist (never auto-archive):**
 - `tools` (system context for tool repos)
-- User can extend via `build/config.json`: `"chinvex_whitelist": ["custom-context"]`
+- User can extend via `config.json`: `"chinvex_whitelist": ["custom-context"]`
 
 **Orphan handling:**
 When reconciling, if a repo path appears in a context but has no corresponding registry entry:
@@ -279,6 +290,11 @@ When reconciling, if a repo path appears in a context but has no corresponding r
 - [ ] Registry entries have `chinvex_context` field
 - [ ] Integration is idempotent (running twice doesn't break state)
 - [ ] Errors from chinvex CLI are caught and logged (don't break strap operations)
+- [ ] All chinvex failures set `chinvex_context: null` in registry (canonical error handling)
+- [ ] Scope detection uses most-specific path match (tools_root before software_root)
+- [ ] `strap rename --move-folder` updates repo path in chinvex context
+- [ ] `strap clone`/`strap adopt` rejects reserved context names (`tools`, `archive`) for software repos
+- [ ] `strap sync-chinvex` without flags defaults to dry-run
 
 ## Edge Cases
 
@@ -296,6 +312,7 @@ When reconciling, if a repo path appears in a context but has no corresponding r
 6. **Renaming folder but not registry entry:** Chinvex path stays stale until `strap move` is used.
 7. **Manual chinvex path edits:** Not detected by strap. User must use strap commands for consistency.
 8. **Running strap clone twice for same repo:** Idempotency guaranteed by `--idempotent` flag on `chinvex context create` and `--register-only` deduplication in chinvex (path already in includes = no-op).
+9. **Repo name collides with reserved context name:** If a software repo is named `tools` or `archive` (reserved system context names), `strap clone`/`strap adopt` must reject or namespace it (e.g., `software-tools`). Reserved names: `tools`, `archive`.
 
 ## Out of Scope
 
@@ -316,13 +333,14 @@ if (-not $chinvexAvailable) {
 }
 ```
 
-**Error handling:** Wrap all chinvex calls in try-catch. Log errors but don't abort strap operation:
+**Error handling:** Wrap all chinvex calls in try-catch. Log errors but don't abort strap operation. **Canonical rule:** any chinvex failure sets `chinvex_context: null` in registry and continues. `strap sync-chinvex --reconcile` cleans up later.
 
 ```powershell
 try {
   & chinvex context create $contextName
 } catch {
   Write-Warning "Failed to create chinvex context: $_"
+  $entry.chinvex_context = $null  # Mark for reconciliation
   # Continue with strap operation
 }
 ```
