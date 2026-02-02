@@ -862,6 +862,125 @@ function Get-ShimReferences {
     return ,$references.ToArray()
 }
 
+function Get-PathReferences {
+    <#
+    .SYNOPSIS
+    Detects PATH environment variable entries that reference repository paths
+
+    .PARAMETER RepoPaths
+    Array of repository paths to check for references
+
+    .OUTPUTS
+    Array of hashtables with 'type' and 'path' properties
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $RepoPaths
+    )
+
+    # Normalize repo paths for comparison
+    $normalizedRepoPaths = $RepoPaths | ForEach-Object {
+        $_.Replace('/', '\').TrimEnd('\').ToLower()
+    }
+
+    # Get User and Machine PATH variables
+    $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+    $machinePath = [Environment]::GetEnvironmentVariable("PATH", "Machine")
+
+    # Combine and split by semicolon
+    $allPathEntries = @()
+    if ($userPath) { $allPathEntries += $userPath -split ';' }
+    if ($machinePath) { $allPathEntries += $machinePath -split ';' }
+
+    # Find matching entries
+    $references = [System.Collections.ArrayList]::new()
+    foreach ($pathEntry in $allPathEntries) {
+        if ([string]::IsNullOrWhiteSpace($pathEntry)) { continue }
+
+        $normalizedEntry = $pathEntry.TrimEnd('\').ToLower()
+
+        # Check if entry starts with any repo path
+        $matchesRepo = $normalizedRepoPaths | Where-Object {
+            $normalizedEntry.StartsWith($_)
+        }
+
+        if ($matchesRepo) {
+            $null = $references.Add(@{
+                type = "PATH"
+                path = $pathEntry
+            })
+        }
+    }
+
+    return ,$references.ToArray()
+}
+
+function Get-ProfileReferences {
+    <#
+    .SYNOPSIS
+    Detects PowerShell profile references to repository paths
+
+    .PARAMETER ProfilePath
+    Path to PowerShell profile file (defaults to $PROFILE)
+
+    .PARAMETER RepoPaths
+    Array of repository paths to check for references
+
+    .OUTPUTS
+    Array of hashtables with 'type' and 'path' properties
+    #>
+    param(
+        [Parameter()]
+        [string] $ProfilePath = $PROFILE,
+
+        [Parameter(Mandatory)]
+        [string[]] $RepoPaths
+    )
+
+    # Check if profile exists
+    if (-not (Test-Path $ProfilePath)) {
+        Write-Verbose "Profile not found: $ProfilePath"
+        return @()
+    }
+
+    try {
+        # Read profile content
+        $content = Get-Content $ProfilePath -Raw -ErrorAction Stop
+
+        # Normalize repo paths for comparison
+        $normalizedRepoPaths = $RepoPaths | ForEach-Object {
+            $_.Replace('/', '\').TrimEnd('\').ToLower()
+        }
+
+        # Extract Windows paths from content
+        $pathMatches = [regex]::Matches($content, '[A-Za-z]:\\[^\s\r\n\"\'']+')
+
+        # Find matching paths
+        $references = [System.Collections.ArrayList]::new()
+        foreach ($match in $pathMatches) {
+            $extractedPath = $match.Value.TrimEnd('\').ToLower()
+
+            # Check if path starts with any repo path
+            $matchesRepo = $normalizedRepoPaths | Where-Object {
+                $extractedPath.StartsWith($_)
+            }
+
+            if ($matchesRepo) {
+                $null = $references.Add(@{
+                    type = "profile"
+                    path = $match.Value
+                })
+            }
+        }
+
+        return ,$references.ToArray()
+
+    } catch {
+        Write-Verbose "Failed to read profile $ProfilePath`: $_"
+        return @()
+    }
+}
+
 function Should-ExcludePath($fullPath, $root) {
   $rel = $fullPath.Substring($root.Length).TrimStart('\\','/')
   if (-not $rel) { return $false }
