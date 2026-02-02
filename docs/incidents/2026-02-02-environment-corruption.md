@@ -1,7 +1,7 @@
 # Incident Report: Environment Corruption During Strap Development
 
 **Date:** 2026-02-02
-**Duration:** ~3 hours
+**Duration:** ~5 hours
 **Severity:** Critical - Multiple system components broken
 **Root Cause:** Subagent processes consumed 45GB RAM, required force-kill, resulting in environment corruption
 

@@ -1397,6 +1397,163 @@ function Invoke-Snapshot {
     return $manifest
 }
 
+function Invoke-Audit {
+    <#
+    .SYNOPSIS
+    Audits repositories for hardcoded path references
+
+    .PARAMETER TargetName
+    Name of specific repository to audit
+
+    .PARAMETER AllRepos
+    Audit all repositories in registry
+
+    .PARAMETER ToolScope
+    Filter to tool-scoped repositories only
+
+    .PARAMETER SoftwareScope
+    Filter to software-scoped repositories only
+
+    .PARAMETER RebuildIndex
+    Force rebuild of audit index even if cached
+
+    .PARAMETER OutputJson
+    Output results as JSON
+
+    .PARAMETER StrapRootPath
+    Path to strap root directory
+
+    .OUTPUTS
+    Hashtable or array with audit results
+    #>
+    param(
+        [Parameter()]
+        [string] $TargetName,
+
+        [Parameter()]
+        [switch] $AllRepos,
+
+        [Parameter()]
+        [switch] $ToolScope,
+
+        [Parameter()]
+        [switch] $SoftwareScope,
+
+        [Parameter()]
+        [switch] $RebuildIndex,
+
+        [Parameter()]
+        [switch] $OutputJson,
+
+        [Parameter(Mandatory)]
+        [string] $StrapRootPath
+    )
+
+    # Load config and registry
+    $config = Load-Config $StrapRootPath
+    $registryPath = $config.registry
+
+    if (-not (Test-Path $registryPath)) {
+        Die "Registry not found: $registryPath"
+    }
+
+    $registryContent = Get-Content $registryPath -Raw | ConvertFrom-Json
+    $registryUpdatedAt = $registryContent.updated_at
+    $registry = if ($registryContent.PSObject.Properties['entries']) {
+        $registryContent.entries
+    } else {
+        $registryContent
+    }
+
+    # Filter by scope if requested
+    if ($ToolScope) {
+        $registry = $registry | Where-Object { $_.scope -eq "tool" }
+    }
+    if ($SoftwareScope) {
+        $registry = $registry | Where-Object { $_.scope -eq "software" }
+    }
+
+    # Build audit index
+    $indexPath = Join-Path $StrapRootPath "build\audit-index.json"
+    $auditIndex = Build-AuditIndex -IndexPath $indexPath -RebuildIndex $RebuildIndex.IsPresent `
+        -RegistryUpdatedAt $registryUpdatedAt -Registry $registry
+
+    # Process audit results
+    if ($AllRepos) {
+        # Audit all repositories
+        $results = @()
+        foreach ($repoPath in $auditIndex.repos.Keys) {
+            $entry = $registry | Where-Object { $_.path -eq $repoPath } | Select-Object -First 1
+            if (-not $entry) { continue }
+
+            $refs = $auditIndex.repos[$repoPath].references
+            $results += @{
+                repository = $entry.name
+                path = $repoPath
+                references = $refs
+                reference_count = $refs.Count
+            }
+        }
+
+        if ($OutputJson) {
+            $results | ConvertTo-Json -Depth 10
+        } else {
+            Write-Host "`nAudit Results - All Repositories:" -ForegroundColor Cyan
+            foreach ($res in $results) {
+                Write-Host "`n$($res.repository) ($($res.path))" -ForegroundColor Yellow
+                Write-Host "  References found: $($res.reference_count)"
+                if ($res.reference_count -gt 0) {
+                    $res.references | Select-Object -First 5 | ForEach-Object {
+                        Write-Host "    - $_" -ForegroundColor Gray
+                    }
+                    if ($res.reference_count -gt 5) {
+                        Write-Host "    ... and $($res.reference_count - 5) more" -ForegroundColor Gray
+                    }
+                }
+            }
+        }
+
+        return $results
+
+    } else {
+        # Audit specific repository
+        if (-not $TargetName) {
+            Die "Audit requires a target name or --all flag"
+        }
+
+        $entry = $registry | Where-Object { $_.name -eq $TargetName -or $_.id -eq $TargetName } | Select-Object -First 1
+        if (-not $entry) {
+            Die "Repository '$TargetName' not found in registry"
+        }
+
+        $refs = $auditIndex.repos[$entry.path].references
+        $result = @{
+            repository = $entry.name
+            path = $entry.path
+            references = $refs
+            reference_count = $refs.Count
+        }
+
+        if ($OutputJson) {
+            $result | ConvertTo-Json -Depth 10
+        } else {
+            Write-Host "`nAudit Results for $($entry.name):" -ForegroundColor Cyan
+            Write-Host "Path: $($entry.path)"
+            Write-Host "References found: $($refs.Count)"
+            if ($refs.Count -gt 0) {
+                Write-Host "`nReferences:" -ForegroundColor Yellow
+                $refs | ForEach-Object {
+                    Write-Host "  - $_" -ForegroundColor Gray
+                }
+            } else {
+                Write-Host "No hardcoded path references found." -ForegroundColor Green
+            }
+        }
+
+        return $result
+    }
+}
+
 function Should-ExcludePath($fullPath, $root) {
   $rel = $fullPath.Substring($root.Length).TrimStart('\\','/')
   if (-not $rel) { return $false }
@@ -4384,6 +4541,21 @@ if ($RepoName -eq "snapshot") {
 
   Invoke-Snapshot -ScanDirs $scanDirs -OutputPath $outputPath -StrapRootPath $TemplateRoot
   exit 0
+}
+
+if ($RepoName -eq "audit") {
+    # Parse flags
+    $targetName = if ($ExtraArgs.Count -gt 0 -and -not $ExtraArgs[0].StartsWith("--")) { $ExtraArgs[0] } else { $null }
+    $allFlag = $ExtraArgs -contains "--all"
+    $toolFlag = $ExtraArgs -contains "--tool"
+    $softwareFlag = $ExtraArgs -contains "--software"
+    $jsonFlag = $ExtraArgs -contains "--json"
+    $rebuildFlag = $ExtraArgs -contains "--rebuild-index"
+
+    Invoke-Audit -TargetName $targetName -AllRepos:$allFlag -ToolScope:$toolFlag `
+        -SoftwareScope:$softwareFlag -RebuildIndex:$rebuildFlag -OutputJson:$jsonFlag `
+        -StrapRootPath $TemplateRoot
+    exit 0
 }
 
 if ($RepoName -eq "adopt") {

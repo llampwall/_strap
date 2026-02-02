@@ -1,43 +1,28 @@
-# Node.js
-node_modules/
-pnpm-lock.yaml
-*.log
-npm-debug.log*
-.npm
-.pnpm-debug.log*
-
 # Build output
-dist/
 build/
-*.tsbuildinfo
 
-# Python
+# Python (for any helper scripts)
 __pycache__/
 *.py[cod]
 *.pyd
 .Python
 *.egg-info/
 .eggs/
-
-# Virtual env
 .venv/
 venv/
-
-# Pytest / coverage
 .pytest_cache/
 .coverage
 htmlcov/
 
-# Chinvex indexes
+# Chinvex indexes (if testing locally)
 hybrid.db
 chroma/
 
-# Local configs
+# Local configs - CRITICAL: registry.json and config.json are strap's state
 /*.json
 *.local.json
 *.local.toml
 *.env
-start_gateway.ps1
 
 # Worktrees
 .worktrees/
@@ -45,4 +30,17 @@ start_gateway.ps1
 # OS
 Thumbs.db
 Desktop.ini
+
+# Claude Code project settings
 .claude/
+
+# Temp test scripts
+/test_*.ps1
+/run_tests.ps1
+/manual_*.ps1
+
+# Task planning files
+/batch*.txt
+
+# Logs
+*.log
