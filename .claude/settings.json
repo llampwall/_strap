@@ -1,7 +1,14 @@
 {
   "hooks": {
-    "startup": [
-      "chinvex brief --context strap"
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "chinvex brief --context strap"
+          }
+        ]
+      }
     ]
   }
 }
