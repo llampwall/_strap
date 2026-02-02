@@ -443,9 +443,15 @@ Done! Run 'strap consolidate --from "C:\Users\Jordan\Documents\Code"' next.
 - Git working trees: warn if dirty, require `--allow-dirty` flag to proceed
   - Default: block if uncommitted changes detected in ANY repo
   - With `--allow-dirty`: warn but continue (user responsibility)
+- Windows file locking check:
+  - For each repo being moved: attempt exclusive open on `.git/HEAD` (git repos) or a sentinel file (non-git dirs)
+  - If lock fails: report which repo is locked, suggest `Handle.exe` or `Get-Process` to find offending process
+  - Action: **fail** with "Close the application holding files in <repo> and retry"
+  - Common culprarity: VS Code, terminals with CWD inside repo, file indexers, antivirus
 - Git worktrees detection (comprehensive):
   - Method 1: Run `git worktree list` and check if output has >1 line (indicates linked worktrees)
   - Method 2 (fallback if git command fails): Check if `.git` is a file (gitdir pointer) OR `.git/worktrees/` exists
+  - **Submodule disambiguation:** If `.git` is a file, read its content. If `gitdir:` points to `../.git/modules/` → submodule (NOT a worktree, safe to move). If `gitdir:` points to `../.git/worktrees/` → linked worktree (fail).
   - If worktrees detected: fail with error "Repo has linked worktrees, manual handling required (see git worktree list)"
   - Covers both: repos WITH linked worktrees AND repos that ARE linked worktrees
 
@@ -520,6 +526,8 @@ The wizard's 6 steps are the user-facing view of a two-phase operation:
      - Add to `archive` context for archived repos
      - **If chinvex update fails:** rollback registry changes, report error, consolidation **fails**
   c. Restart PM2 services that were stopped in preflight
+     - **Non-fatal:** If restart fails (e.g., service config has hardcoded old path), log failure and surface in Step 6 verification output
+     - Do NOT fail consolidation for PM2 restart failures — moves and registry are already committed
   d. Remove lock file
 - If ANY move fails:
   - Stop immediately
@@ -712,6 +720,10 @@ strap adopt --path "C:\Code\random-thing" --software
 - [ ] `strap consolidate` only updates registry AFTER all moves succeed
 - [ ] `strap consolidate` rollback log includes completion status per repo
 - [ ] `strap consolidate` detects git worktrees and fails with helpful message
+- [ ] `strap consolidate` distinguishes submodules from worktrees (no false positives on submodule `.git` files)
+- [ ] `strap consolidate` detects Windows file locks in preflight and reports offending repos
+- [ ] `strap consolidate` handles adoption ID collisions (prompt in interactive, fail in `--yes` mode)
+- [ ] `strap consolidate` treats PM2 restart failures as non-fatal, surfaces in Step 6 verification
 - [ ] Archive scope exists alongside tool/software
 - [ ] `archive` chinvex context receives minimal ingest (name, desc, date)
 - [ ] Config location is `config.json` (user-editable), not `build/config.json`
@@ -732,7 +744,8 @@ strap adopt --path "C:\Code\random-thing" --software
   - ID: derived from folder name (sanitized: lowercase, alphanumeric + hyphens only)
   - Name: folder name (original case preserved for display)
   - Scope: determined by heuristics
-  - Collision detection: check if ID conflicts with existing registry entries
+  - Collision detection: check if ID conflicts with existing registry entries or other items in the same scan
+  - Collision resolution: prompt user for alternative name during Step 2 (interactive) or fail with `--yes` (non-interactive)
 - Plan stores: proposed ID, name, scope, source path, destination path
 - During execution: use exact IDs/names/scopes from plan (no re-computation)
 - Guarantee: ID derivation is pure function of folder name, cannot change between plan and execute
