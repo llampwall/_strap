@@ -757,7 +757,7 @@ function Get-ScheduledTaskReferences {
         }
 
         # Scan each task for path references
-        $references = @()
+        $references = [System.Collections.ArrayList]::new()
         foreach ($task in $tasks) {
             # Combine task name, command, and arguments for path extraction
             $searchText = "$($task.TaskName) $($task.'Task To Run')"
@@ -774,22 +774,92 @@ function Get-ScheduledTaskReferences {
                 }
 
                 if ($matchesRepo) {
-                    $references += @{
+                    $null = $references.Add(@{
                         name = $task.TaskName
                         path = $match.Value
-                    }
+                    })
                     break  # Only add task once even if multiple paths match
                 }
             }
         }
 
-        return $references
+        return ,$references.ToArray()
 
     } catch {
         # schtasks failed or not available - return empty array
         Write-Verbose "Failed to query scheduled tasks: $_"
         return @()
     }
+}
+
+function Get-ShimReferences {
+    <#
+    .SYNOPSIS
+    Detects .cmd shim files that reference repository paths
+
+    .PARAMETER ShimDir
+    Directory containing shim files (typically build/shims)
+
+    .PARAMETER RepoPaths
+    Array of repository paths to check for references
+
+    .OUTPUTS
+    Array of hashtables with 'name' and 'target' properties
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string] $ShimDir,
+
+        [Parameter(Mandatory)]
+        [string[]] $RepoPaths
+    )
+
+    # Check if shim directory exists
+    if (-not (Test-Path $ShimDir)) {
+        Write-Verbose "Shim directory not found: $ShimDir"
+        return @()
+    }
+
+    # Normalize repo paths for comparison
+    $normalizedRepoPaths = $RepoPaths | ForEach-Object {
+        $_.Replace('/', '\').TrimEnd('\').ToLower()
+    }
+
+    # Scan all .cmd files in shim directory
+    $references = [System.Collections.ArrayList]::new()
+    $shimFiles = Get-ChildItem -Path $ShimDir -Filter "*.cmd" -ErrorAction SilentlyContinue
+
+    foreach ($shimFile in $shimFiles) {
+        try {
+            # Read shim content
+            $content = Get-Content $shimFile.FullName -Raw -ErrorAction Stop
+
+            # Extract Windows paths from content
+            $pathMatches = [regex]::Matches($content, '[A-Za-z]:\\[^\r\n\"]+')
+
+            foreach ($match in $pathMatches) {
+                $extractedPath = $match.Value.TrimEnd('\').ToLower()
+
+                # Check if path starts with any repo path
+                $matchesRepo = $normalizedRepoPaths | Where-Object {
+                    $extractedPath.StartsWith($_)
+                }
+
+                if ($matchesRepo) {
+                    $null = $references.Add(@{
+                        name = $shimFile.BaseName
+                        target = $match.Value
+                    })
+                    break  # Only add shim once even if multiple paths match
+                }
+            }
+        } catch {
+            Write-Verbose "Failed to read shim file $($shimFile.FullName): $_"
+            continue
+        }
+    }
+
+    return ,$references.ToArray()
 }
 
 function Should-ExcludePath($fullPath, $root) {
