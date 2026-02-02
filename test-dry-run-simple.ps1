@@ -1,10 +1,10 @@
 $ErrorActionPreference = "Stop"
 
-$registryPath = "P:\software\_strap\build\registry.json.test-temp"
-$strapPs1 = "P:\software\_strap\build\strap.ps1"
+$registryPath = "P:\software\_strap\registry.json.test-temp"
+$strapPs1 = "P:\software\_strap\strap.ps1"
 
 # Backup actual registry
-$actualRegistry = "P:\software\_strap\build\registry.json"
+$actualRegistry = "P:\software\_strap\registry.json"
 $actualBackup = $null
 if (Test-Path $actualRegistry) {
   $actualBackup = Get-Content -LiteralPath $actualRegistry -Raw

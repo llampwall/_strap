@@ -131,7 +131,7 @@ function Apply-ExtraArgs {
 
 Apply-ExtraArgs $ExtraArgs
 
-$TemplateRoot = if ($StrapRoot) { $StrapRoot } else { Split-Path $PSScriptRoot -Parent }
+$TemplateRoot = if ($StrapRoot) { $StrapRoot } else { $PSScriptRoot }
 $DefaultBranch = if ($env:BOOTSTRAP_BRANCH) { $env:BOOTSTRAP_BRANCH } else { "main" }
 
 function Show-Help {
@@ -2225,7 +2225,7 @@ function Invoke-Templatize {
   $srcRoot = Resolve-GitRoot $sourceBase
   if (-not $srcRoot) { Die "Source path is not a git repo: $sourceBase" }
 
-  $strapRoot = if ($RootPath) { $RootPath } else { Split-Path $PSScriptRoot -Parent }
+  $strapRoot = if ($RootPath) { $RootPath } else { $PSScriptRoot }
   if (-not (Test-Path $strapRoot)) { Die "strap root not found: $strapRoot" }
 
   $dirty = & git -C $strapRoot status --porcelain
@@ -3290,14 +3290,14 @@ if ($SkipInstall.IsPresent) {
   }
 }
 
-$ContextHookCmd = Join-Path $TemplateRoot "build\\context-hook.cmd"
-$ContextHookPs1 = Join-Path $TemplateRoot "build\\context-hook.ps1"
+$ContextHookCmd = Join-Path $TemplateRoot "context-hook.cmd"
+$ContextHookPs1 = Join-Path $TemplateRoot "context-hook.ps1"
 if (Test-Path $ContextHookCmd) {
   & $ContextHookCmd install | Out-Null
 } elseif (Test-Path $ContextHookPs1) {
   & $ContextHookPs1 install | Out-Null
 } else {
-  Die "context-hook not found in build/"
+  Die "context-hook not found in strap root"
 }
 
 Normalize-TextFiles $Dest

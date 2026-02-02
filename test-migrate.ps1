@@ -16,8 +16,8 @@ function Test-Step {
 }
 
 $testResults = @()
-$strapPs1 = "P:\software\_strap\build\strap.ps1"
-$registryPath = "P:\software\_strap\build\registry.json"
+$strapPs1 = "P:\software\_strap\strap.ps1"
+$registryPath = "P:\software\_strap\registry.json"
 
 # Backup registry if it exists
 $registryBackup = $null
