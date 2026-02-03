@@ -3752,6 +3752,7 @@ function Invoke-Adopt {
     [string] $CustomName,
     [switch] $ForceTool,
     [switch] $ForceSoftware,
+    [switch] $NoChinvex,
     [switch] $NonInteractive,
     [switch] $DryRunMode,
     [string] $StrapRootPath
@@ -3803,15 +3804,26 @@ function Invoke-Adopt {
     Die "Entry with name '$name' already exists in registry at $($existing.path)"
   }
 
-  # Determine scope
+  # Determine scope (explicit flag > auto-detect from path)
   $scope = if ($ForceTool) {
     "tool"
   } elseif ($ForceSoftware) {
     "software"
-  } elseif ($withinTools) {
-    "tool"
   } else {
-    "software"
+    # Auto-detect from path
+    $detectedScope = Detect-RepoScope -Path $resolvedPath -StrapRootPath $StrapRootPath
+    if ($null -eq $detectedScope) {
+      Warn "Path is outside managed roots. Defaulting to 'software'. Use --tool or --software to override."
+      "software"
+    } else {
+      Info "Auto-detected scope: $detectedScope (from path)"
+      $detectedScope
+    }
+  }
+
+  # Reserved name check (before any filesystem changes)
+  if (Test-ReservedContextName -Name $name -Scope $scope) {
+    Die "Cannot use reserved name '$name' for software repos. Reserved names: tools, archive"
   }
 
   # Extract git metadata (best-effort)
@@ -3853,74 +3865,63 @@ function Invoke-Adopt {
     Pop-Location
   }
 
+  # Dry run: show what would happen
+  if ($DryRunMode) {
+    Info "[DRY RUN] Would adopt: $resolvedPath"
+    Info "[DRY RUN] Name: $name"
+    Info "[DRY RUN] Scope: $scope"
+    Info "[DRY RUN] URL: $url"
+    Info "[DRY RUN] Stack: $stackDetected"
+    return
+  }
+
   # Create entry
   $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
   $entry = [PSCustomObject]@{
-    id         = $name
-    name       = $name
-    scope      = $scope
-    path       = $resolvedPath
-    url        = $url
-    shims      = @()
-    created_at = $timestamp
-    updated_at = $timestamp
-  }
-
-  if ($lastHead) {
-    $entry | Add-Member -NotePropertyName 'last_head' -NotePropertyValue $lastHead -Force
-  }
-
-  if ($stackDetected) {
-    $entry | Add-Member -NotePropertyName 'stack_detected' -NotePropertyValue $stackDetected -Force
-  }
-
-  # Preview
-  Write-Host ""
-  Write-Host "=== ADOPT PREVIEW ===" -ForegroundColor Cyan
-  Write-Host "Name:     $name"
-  Write-Host "Scope:    $scope"
-  Write-Host "Path:     $resolvedPath"
-  if ($url) { Write-Host "URL:      $url" }
-  if ($stackDetected) { Write-Host "Stack:    $stackDetected" }
-  if ($lastHead) { Write-Host "HEAD:     $lastHead" }
-  Write-Host ""
-
-  if ($DryRunMode) {
-    Write-Host "DRY RUN - no changes will be made" -ForegroundColor Yellow
-    exit 0
-  }
-
-  # Confirmation
-  if (-not $NonInteractive) {
-    $response = Read-Host "Adopt this repo into registry? (y/n)"
-    if ($response -ne "y") {
-      Info "Aborted by user"
-      exit 1
-    }
+    id              = $name
+    name            = $name
+    url             = $url
+    path            = $resolvedPath
+    scope           = $scope
+    chinvex_context = $null  # Default, updated below if sync succeeds
+    shims           = @()
+    stack           = if ($stackDetected) { @($stackDetected) } else { @() }
+    last_head       = $lastHead
+    default_branch  = $defaultBranch
+    created_at      = $timestamp
+    updated_at      = $timestamp
   }
 
   # Add to registry
-  $registry += $entry
+  $newRegistry = @()
+  foreach ($item in $registry) {
+    $newRegistry += $item
+  }
+  $newRegistry += $entry
+  Save-Registry $config $newRegistry
 
-  # Save registry
-  try {
-    Save-Registry $config $registry
-    Write-Host ""
-    Ok "Adopted '$name' -> $resolvedPath"
-    Write-Host ""
-    Info "Next steps:"
-    if ($stackDetected) {
-      Info "  strap setup --repo $name  (install dependencies)"
+  # Chinvex sync (after registry write)
+  if (Test-ChinvexEnabled -NoChinvex:$NoChinvex -StrapRootPath $StrapRootPath) {
+    $contextName = Sync-ChinvexForEntry -Scope $scope -Name $name -RepoPath $resolvedPath
+    if ($contextName) {
+      # Update entry with successful chinvex context
+      $entry.chinvex_context = $contextName
+      # Re-save registry with updated chinvex_context
+      $updatedRegistry = @()
+      foreach ($item in $newRegistry) {
+        if ($item.name -eq $name) {
+          $item.chinvex_context = $contextName
+        }
+        $updatedRegistry += $item
+      }
+      Save-Registry $config $updatedRegistry
     }
-    Info "  strap shim <cmd> --- <command>  (create launcher)"
-    Info "  strap update $name  (pull latest changes)"
-  } catch {
-    Write-Host ""
-    Write-Host "ERROR writing registry: $_" -ForegroundColor Red
-    exit 3
   }
 
-  exit 0
+  Ok "Adopted: $name ($resolvedPath)"
+  Info "Scope: $scope"
+  if ($url) { Info "Remote: $url" }
+  if ($stackDetected) { Info "Stack: $stackDetected" }
 }
 
 function Invoke-Migrate {
