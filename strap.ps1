@@ -133,6 +133,7 @@ function Apply-ExtraArgs {
       "--name" { if ($i + 1 -lt $ArgsList.Count) { $script:Name = $ArgsList[$i + 1]; $i++; continue } }
       "--dest" { if ($i + 1 -lt $ArgsList.Count) { $script:Dest = $ArgsList[$i + 1]; $i++; continue } }
       "--software" { $script:Software = $true; continue }
+      "--no-chinvex" { $script:NoChinvex = $true; continue }
       "--json" { $script:Json = $true; continue }
       "--yes" { $script:Yes = $true; continue }
       "--dry-run" { $script:DryRun = $true; continue }
@@ -162,6 +163,41 @@ function Apply-ExtraArgs {
 }
 
 Apply-ExtraArgs $ExtraArgs
+
+function Parse-GlobalFlags {
+  <#
+  .SYNOPSIS
+      Extracts chinvex-related global flags from command line arguments.
+  .DESCRIPTION
+      Parses --no-chinvex, --tool, and --software flags.
+      Returns a hashtable with flag values and remaining arguments.
+  .PARAMETER Arguments
+      The full argument list from CLI.
+  .OUTPUTS
+      [hashtable] with keys: NoChinvex, IsTool, IsSoftware, RemainingArgs
+  #>
+  param(
+      [string[]] $Arguments
+  )
+
+  $result = @{
+      NoChinvex = $false
+      IsTool = $false
+      IsSoftware = $false
+      RemainingArgs = @()
+  }
+
+  foreach ($arg in $Arguments) {
+      switch ($arg) {
+          "--no-chinvex" { $result.NoChinvex = $true }
+          "--tool" { $result.IsTool = $true }
+          "--software" { $result.IsSoftware = $true }
+          default { $result.RemainingArgs += $arg }
+      }
+  }
+
+  return $result
+}
 
 $TemplateRoot = if ($StrapRoot) { $StrapRoot } else { $PSScriptRoot }
 $DefaultBranch = if ($env:BOOTSTRAP_BRANCH) { $env:BOOTSTRAP_BRANCH } else { "main" }
