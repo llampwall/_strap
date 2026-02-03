@@ -266,6 +266,116 @@ function Load-Config($strapRoot) {
   return $json
 }
 
+# ============================================================================
+# CHINVEX INTEGRATION - CLI Wrappers
+# ============================================================================
+
+# Script-level cache for chinvex availability check
+$script:chinvexChecked = $false
+$script:chinvexAvailable = $false
+
+function Test-ChinvexAvailable {
+    <#
+    .SYNOPSIS
+        Checks if chinvex CLI is available on PATH. Result is cached.
+    .OUTPUTS
+        [bool] True if chinvex command exists, false otherwise.
+    #>
+    if (-not $script:chinvexChecked) {
+        $script:chinvexChecked = $true
+        $script:chinvexAvailable = [bool](Get-Command chinvex -ErrorAction SilentlyContinue)
+        if (-not $script:chinvexAvailable) {
+            Warn "Chinvex not installed or not on PATH. Skipping context sync."
+        }
+    }
+    return $script:chinvexAvailable
+}
+
+function Test-ChinvexEnabled {
+    <#
+    .SYNOPSIS
+        Determines if chinvex integration should run.
+    .DESCRIPTION
+        Precedence: -NoChinvex flag > config.chinvex_integration > default (true)
+    .PARAMETER NoChinvex
+        If set, always returns false (explicit opt-out).
+    .PARAMETER StrapRootPath
+        Path to strap root for loading config.
+    .OUTPUTS
+        [bool] True if chinvex integration should run.
+    #>
+    param(
+        [switch] $NoChinvex,
+        [string] $StrapRootPath
+    )
+
+    # Flag overrides everything
+    if ($NoChinvex) { return $false }
+
+    # Config check
+    $config = Load-Config $StrapRootPath
+    if ($config.chinvex_integration -eq $false) { return $false }
+
+    # Default: enabled, but only if chinvex is actually installed
+    return (Test-ChinvexAvailable)
+}
+
+function Invoke-Chinvex {
+    <#
+    .SYNOPSIS
+        Runs chinvex CLI command. Returns $true on exit 0, $false otherwise.
+    .DESCRIPTION
+        Does NOT throw - caller checks return value.
+        Canonical error handling: any failure returns $false.
+    .PARAMETER Arguments
+        Array of arguments to pass to chinvex CLI.
+    .OUTPUTS
+        [bool] True if exit code 0, false otherwise.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $Arguments
+    )
+
+    if (-not (Test-ChinvexAvailable)) { return $false }
+
+    try {
+        & chinvex @Arguments 2>&1 | Out-Null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        Warn "Chinvex error: $_"
+        return $false
+    }
+}
+
+function Invoke-ChinvexQuery {
+    <#
+    .SYNOPSIS
+        Runs chinvex CLI command and returns stdout. Returns $null on failure.
+    .PARAMETER Arguments
+        Array of arguments to pass to chinvex CLI.
+    .OUTPUTS
+        [string] Command output on success, $null on failure.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string[]] $Arguments
+    )
+
+    if (-not (Test-ChinvexAvailable)) { return $null }
+
+    try {
+        $output = & chinvex @Arguments 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            return ($output -join "`n")
+        }
+        return $null
+    } catch {
+        Warn "Chinvex query error: $_"
+        return $null
+    }
+}
+
 function Parse-GitUrl($url) {
   # Extract repo name from git URL
   # Examples:
