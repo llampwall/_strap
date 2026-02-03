@@ -2549,6 +2549,7 @@ function Invoke-Uninstall {
     [switch] $DryRunMode,
     [switch] $PreserveFolder,
     [switch] $PreserveShims,
+    [switch] $NoChinvex,
     [string] $StrapRootPath
   )
 
@@ -2672,6 +2673,28 @@ function Invoke-Uninstall {
   }
 
   Write-Host ""
+
+  # Chinvex cleanup (BEFORE removing shims/folder/registry)
+  if (Test-ChinvexEnabled -NoChinvex:$NoChinvex -StrapRootPath $StrapRootPath) {
+    if ($entry.scope -eq 'software' -and $entry.chinvex_context) {
+      # Archive the individual context
+      $archived = Invoke-Chinvex -Arguments @("context", "archive", $entry.chinvex_context)
+      if ($archived) {
+        Info "Chinvex: archived context '$($entry.chinvex_context)'"
+      } else {
+        Warn "Chinvex: failed to archive context '$($entry.chinvex_context)' (continuing with uninstall)"
+      }
+    }
+    elseif ($entry.scope -eq 'tool' -and $entry.chinvex_context) {
+      # Remove repo from tools context (never archive tools context itself)
+      $removed = Invoke-Chinvex -Arguments @("context", "remove-repo", "tools", "--repo", $repoPath)
+      if ($removed) {
+        Info "Chinvex: removed '$repoPath' from tools context"
+      } else {
+        Warn "Chinvex: failed to remove repo from tools context (continuing with uninstall)"
+      }
+    }
+  }
 
   # Execute deletions
   # 1. Remove shims
