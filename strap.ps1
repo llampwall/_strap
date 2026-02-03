@@ -2147,6 +2147,7 @@ function Invoke-Move {
     [switch] $DryRunMode,
     [switch] $ForceOverwrite,
     [switch] $RehomeShims,
+    [switch] $NoChinvex,
     [string] $StrapRootPath
   )
 
@@ -2261,10 +2262,83 @@ function Invoke-Move {
   $entry.updated_at = Get-Date -Format "o"
 
   # Optional: update scope if moved between roots
+  $oldScope = $entry.scope
+  $newScope = $oldScope
   if ($newPath.StartsWith($softwareRoot, [StringComparison]::OrdinalIgnoreCase)) {
+    $newScope = "software"
     $entry.scope = "software"
   } elseif ($newPath.StartsWith($toolsRoot, [StringComparison]::OrdinalIgnoreCase)) {
+    $newScope = "tool"
     $entry.scope = "tool"
+  }
+
+  # Chinvex integration: update context after move
+  if (Test-ChinvexEnabled -NoChinvex:$NoChinvex -StrapRootPath $StrapRootPath) {
+    $oldChinvexContext = $entry.chinvex_context
+    $scopeChanged = $oldScope -ne $newScope
+
+    if ($scopeChanged) {
+      # Scope changed - need to handle context migration
+      $newContextName = Get-ContextName -Scope $newScope -Name $NameToMove
+
+      # Create new context if needed
+      if ($newScope -eq "software") {
+        # Moving to software - create individual context
+        $createResult = Invoke-Chinvex @("context", "create", $newContextName)
+        if ($createResult) {
+          Info "Created chinvex context: $newContextName"
+        }
+      } elseif ($newScope -eq "tool") {
+        # Moving to tools - ensure tools context exists
+        $createResult = Invoke-Chinvex @("context", "create", "tools")
+        if ($createResult) {
+          Info "Created chinvex context: tools"
+        }
+      }
+
+      # Register new path in new context
+      $ingestResult = Invoke-Chinvex @("ingest", $newPath, "--context", $newContextName, "--register-only")
+      if ($ingestResult) {
+        $entry.chinvex_context = $newContextName
+        Info "Registered with chinvex context: $newContextName"
+
+        # Archive old context if it was software-scoped
+        if ($oldScope -eq "software" -and $oldChinvexContext) {
+          $archiveResult = Invoke-Chinvex @("context", "archive", $oldChinvexContext)
+          if ($archiveResult) {
+            Info "Archived old chinvex context: $oldChinvexContext"
+          }
+        } elseif ($oldScope -eq "tool") {
+          # Remove from tools context
+          $removeResult = Invoke-Chinvex @("context", "remove-repo", "--context", "tools", "--path", $oldPath)
+          if ($removeResult) {
+            Info "Removed from tools context"
+          }
+        }
+      } else {
+        Warn "Failed to register with chinvex context: $newContextName"
+        $entry.chinvex_context = $null
+      }
+    } else {
+      # Same scope - just update path
+      $contextName = $entry.chinvex_context
+      if ($contextName) {
+        # Remove old path
+        $removeResult = Invoke-Chinvex @("context", "remove-repo", "--context", $contextName, "--path", $oldPath)
+        if ($removeResult) {
+          Info "Removed old path from chinvex context: $contextName"
+        }
+
+        # Add new path
+        $ingestResult = Invoke-Chinvex @("ingest", $newPath, "--context", $contextName, "--register-only")
+        if ($ingestResult) {
+          Info "Updated chinvex context: $contextName"
+        } else {
+          Warn "Failed to update chinvex context"
+          $entry.chinvex_context = $null
+        }
+      }
+    }
   }
 
   # Optional shim rehome
