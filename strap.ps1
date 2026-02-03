@@ -1914,6 +1914,7 @@ function Invoke-Clone {
     [string] $CustomName,
     [string] $DestPath,
     [switch] $IsTool,
+    [switch] $NoChinvex,
     [string] $StrapRootPath
   )
 
@@ -1926,6 +1927,14 @@ function Invoke-Clone {
 
   # Parse repo name from URL
   $repoName = if ($CustomName) { $CustomName } else { Parse-GitUrl $GitUrl }
+
+  # Determine scope
+  $scope = if ($IsTool) { "tool" } else { "software" }
+
+  # Reserved name check (before any filesystem changes)
+  if (Test-ReservedContextName -Name $repoName -Scope $scope) {
+    Die "Cannot use reserved name '$repoName' for software repos. Reserved names: tools, archive"
+  }
 
   # Determine destination
   $destPath = if ($DestPath) {
@@ -1963,18 +1972,19 @@ function Invoke-Clone {
   # Resolve to absolute path for registry
   $absolutePath = (Resolve-Path -LiteralPath $destPath).Path
 
-  # Create new entry with ID
+  # Create new entry with ID and chinvex fields
   $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
   $entry = [PSCustomObject]@{
-    id         = $repoName
-    name       = $repoName
-    url        = $GitUrl
-    path       = $absolutePath
-    scope      = if ($IsTool) { "tool" } else { "software" }
-    shims      = @()
-    stack      = @()
-    created_at = $timestamp
-    updated_at = $timestamp
+    id              = $repoName
+    name            = $repoName
+    url             = $GitUrl
+    path            = $absolutePath
+    scope           = $scope
+    chinvex_context = $null  # Default, updated below if sync succeeds
+    shims           = @()
+    stack           = @()
+    created_at      = $timestamp
+    updated_at      = $timestamp
   }
 
   # Add to registry
@@ -1985,13 +1995,30 @@ function Invoke-Clone {
   $newRegistry += $entry
   Save-Registry $config $newRegistry
 
+  # Chinvex sync (after registry write)
+  if (Test-ChinvexEnabled -NoChinvex:$NoChinvex -StrapRootPath $StrapRootPath) {
+    $contextName = Sync-ChinvexForEntry -Scope $scope -Name $repoName -RepoPath $absolutePath
+    if ($contextName) {
+      # Update entry with successful chinvex context
+      $entry.chinvex_context = $contextName
+      # Re-save registry with updated chinvex_context
+      $updatedRegistry = @()
+      foreach ($item in $newRegistry) {
+        if ($item.name -eq $repoName) {
+          $item.chinvex_context = $contextName
+        }
+        $updatedRegistry += $item
+      }
+      Save-Registry $config $updatedRegistry
+    }
+  }
+
   Ok "Added to registry"
 
   # TODO: Offer to run setup / create shim
   Info "Next steps:"
-  Info "  cd $absolutePath"
-  Info "  strap setup (to install dependencies)"
-  Info "  strap shim <name> -- <command> (to create a launcher)"
+  Info "  strap setup --repo $repoName"
+  Info "  strap shim <name> --- <command> --repo $repoName"
 }
 
 function Invoke-List {
