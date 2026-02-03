@@ -62,8 +62,8 @@ Describe "Config Schema Extension" -Tag "Task1" {
 
         It "should add chinvex_whitelist default (['tools', 'archive'])" {
             $config = Load-Config $script:testStrapRoot
-            $config.chinvex_whitelist -contains "tools" | Should Be $true
-            $config.chinvex_whitelist -contains "archive" | Should Be $true
+            ("tools" -in $config.chinvex_whitelist) | Should Be $true
+            ("archive" -in $config.chinvex_whitelist) | Should Be $true
         }
 
         It "should add software_root default (P:\software)" {
@@ -102,7 +102,7 @@ Describe "Config Schema Extension" -Tag "Task1" {
 
         It "should preserve explicit chinvex_whitelist value" {
             $config = Load-Config $script:testStrapRoot
-            $config.chinvex_whitelist -contains "custom-ctx" | Should Be $true
+            ("custom-ctx" -in $config.chinvex_whitelist) | Should Be $true
         }
 
         It "should preserve explicit software_root value" {
