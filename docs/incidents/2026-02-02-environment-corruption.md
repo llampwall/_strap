@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-While developing strap's snapshot and audit functionality (Tasks 11-14 of the PowerShell port), Claude Code subagents spiraled out of control, consuming 45GB of RAM. Force-killing these processes corrupted multiple environment variables, PowerShell profiles, and system configurations. The irony: strap was being built to protect against exactly this kind of environment corruption.
+While developing strap's snapshot and audit functionality (Tasks 11-14 of the PowerShell port), Claude Code subagents spiraled out of control, consuming 45GB of RAM. Force-killing these processes resulted in catastrophic environment corruption: **the entire User PATH environment variable was completely DELETED**, along with corruption to PowerShell profiles and system configurations. Without access to global commands (including claude and codex), diagnosis and recovery were extremely difficult in the initial stages. The irony: strap was being built to protect against exactly this kind of environment corruption.
 
 ---
 
@@ -21,14 +21,15 @@ While developing strap's snapshot and audit functionality (Tasks 11-14 of the Po
 - Corruption occurred during ungraceful termination
 
 ### Phase 2: Discovery
-User noticed multiple issues:
+User noticed multiple critical issues:
 1. PowerShell 5 terminals hanging (non-interactive)
 2. PowerShell 7 (pwsh) terminals hanging
 3. Wezterm not displaying (visible in task manager but no window)
 4. Telegram not displaying (same symptom)
 5. Claude Desktop showing blank window
-6. Claude Code and Codex not recognized as commands, delaying immediate diagnosis
-7. No global commands recognized
+6. **Claude Code and Codex not recognized as commands** - critical tools unavailable for diagnosis
+7. **All global commands were gone** - npm, git, python, conda, etc. not found
+8. **Diagnosis severely hampered** - without access to standard tooling, identifying and fixing issues was exponentially more difficult
 
 ---
 
@@ -37,22 +38,26 @@ User noticed multiple issues:
 ### Issue 1: PowerShell Environment Variables Corrupted
 
 **Symptom:**
-- full `PATH` environment variable completely DELETED
-- `$env:PATH` displayed as `:PATH`
+- **User PATH environment variable COMPLETELY DELETED** - not corrupted, not truncated, but entirely empty
+- `$env:PATH` displayed as `:PATH` instead of actual paths
 - `$env:TEMP` displayed as `:TEMP`
 - Variable names being interpreted as `extglob.Name` instead of `$_.Name`
+- **All global commands unavailable**: npm, git, python, conda, claude, codex, etc.
+- **Recovery tools unavailable**: Could not use claude/codex for diagnosis or automation
 
 **Diagnosis:**
-- opened windows environment variables -> PATH is empty
+- Opened Windows environment variables GUI → User PATH was completely empty
 ```powershell
 # This command showed corruption:
 $env:PATH  # Returned ":PATH" instead of actual path
 ```
+- System PATH was intact, but User PATH (where most critical tools were) was gone
 
 **Resolution:**
-- Extremeley lucky a PATH backup had been made earlier
+- **Extremely lucky** - a PATH backup had been made earlier that day
+- Manually restored PATH from backup file
 - Restart PowerShell session to reload environment from registry
-- Registry values were intact; only session-level environment was corrupted
+- Registry values were intact; only session-level environment was corrupted initially, but User PATH in registry was also deleted
 
 **Strap Requirement:** Capture and restore process-level environment variables
 
@@ -496,10 +501,12 @@ Checks:
 ## Lessons Learned
 
 1. **Subagent resource limits are critical** - 45GB RAM consumption should have been caught earlier
-2. **Force-killing processes corrupts environment** - Graceful shutdown is essential
-3. **Multiple backup locations saved us** - User had PATH backup, profile backups, env backups
-4. **Cascading failures are hard to debug** - Conda failure masked by profile failure masked by PATH corruption
-5. **The tool being built was exactly what was needed** - Deep irony that strap's snapshot/restore would have prevented this
+2. **Force-killing processes can DELETE environment variables entirely** - Not just corrupt, but completely erase critical system state like PATH
+3. **Losing PATH means losing all diagnostic tools** - Without claude, codex, git, npm, python, conda, etc., even identifying what broke became exponentially harder
+4. **Multiple backup locations saved us** - User had PATH backup, profile backups, env backups - without these, recovery would have taken days
+5. **Cascading failures are hard to debug** - Conda failure masked by profile failure masked by PATH deletion - each fix revealed the next issue
+6. **Dual-disk backups are non-negotiable** - Single backup location is a single point of failure
+7. **The tool being built was exactly what was needed** - Deep irony that strap's snapshot/restore would have prevented this entire incident
 
 ---
 
@@ -511,6 +518,193 @@ Checks:
 4. [ ] Add resource monitoring/limits for subagents
 5. [ ] Create automated backup schedule for critical configs
 6. [ ] Document recovery procedures for common failures
+
+---
+
+## Prevention: Automated Snapshot System
+
+To prevent future catastrophic failures, strap must implement a comprehensive automated snapshot system that backs up critical environment state to **multiple locations on different physical drives**.
+
+### Snapshot Frequency
+- **Automatic:** Before any strap operation that modifies environment
+- **Scheduled:** Every 6 hours during active development
+- **Manual:** `strap snapshot` command for on-demand backups
+
+### Backup Locations (Dual-Disk Strategy)
+All snapshots must be written to **2 separate physical drives** to protect against disk failure:
+- **Primary:** `P:\backups\strap-snapshots\`
+- **Secondary:** `C:\Users\Jordan\.strap\backups\`
+
+Each snapshot includes a timestamp and git commit hash for traceability.
+
+### Critical Items to Snapshot
+
+#### 1. Environment Variables (All of Them)
+- **User PATH** - The most critical variable that was completely deleted
+- **System PATH** - For completeness
+- **All User environment variables**: TEMP, TMP, CONDA_*, CHINVEX_*, CODEX_HOME, CODE_HOME, etc.
+- **All System environment variables**: For full restoration capability
+- **Registry export** of environment keys for atomic restoration
+
+```powershell
+# Capture all environment variables
+[Environment]::GetEnvironmentVariables('User')
+[Environment]::GetEnvironmentVariables('Machine')
+```
+
+#### 2. PowerShell Profiles
+Backup all profile variants for both PowerShell 5 and 7:
+- `C:\Users\Jordan\Documents\WindowsPowerShell\profile.ps1`
+- `C:\Users\Jordan\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1`
+- `C:\Users\Jordan\Documents\PowerShell\profile.ps1`
+- `C:\Users\Jordan\Documents\PowerShell\Microsoft.PowerShell_profile.ps1`
+- `C:\Users\Jordan\.wezterm.lua` - Terminal emulator config
+
+Include validation that profiles load without errors.
+
+#### 3. Python Virtual Environments & Conda
+- **Conda installation state**: Version, installation path
+- **Conda environment list**: `conda env list` output
+- **Conda environment specifications**: `conda env export` for each environment
+- **Conda configuration**: `.condarc`, `.conda/` directory
+- **Python venv locations**: Track all venv directories (chinvex/.venv, etc.)
+- **Python package lists**: `pip freeze` output for each venv
+- **Active Python version**: Which Python is default
+
+#### 4. pm2 Configurations
+- **ecosystem.config.js** files for all projects
+- **pm2 process list**: `pm2 jlist` output
+- **pm2 startup config**: Current startup command
+- **pm2 save state**: Saved process list
+
+#### 5. npm Global Packages
+- **npm global list**: `npm list -g --depth=0`
+- **Note**: Claude Code was uninstalled from npm (switched to native installer)
+- Track which globals are critical for restoration
+
+#### 6. Claude & Codex Configurations
+Critical AI tooling configurations that enable development:
+
+**Claude Code:**
+- `C:\Users\Jordan\.claude\config.json` - Main config
+- `C:\Users\Jordan\.claude\settings.json` - Settings and hooks
+- `C:\Users\Jordan\.claude.json` - Legacy config location
+- `C:\Users\Jordan\.claude\skills\` - Custom skills
+- `C:\Users\Jordan\.claude\plugins\` - Installed plugins
+- `C:\Users\Jordan\.claude\mcp\` - MCP server configs
+- `C:\Users\Jordan\.claude\rules\` - Custom rules
+
+**Codex:**
+- `C:\Users\Jordan\.codex\` - Entire .codex directory
+- Any codex-specific configurations
+
+**Claude Desktop:**
+- `C:\Users\Jordan\AppData\Roaming\Claude\claude_desktop_config.json` - MCP servers, Python paths
+
+#### 7. Git State & Repository Tracking
+For each tracked repository:
+- Repository path
+- Remote URLs (`git remote -v`)
+- Current branch
+- Current commit SHA
+- Dirty state (uncommitted changes)
+- Stale changes detection (unpushed commits)
+
+Before snapshot, **automatically commit and push** any stale changes:
+```powershell
+# For each tracked repo:
+if (git status --porcelain) {
+    git add .
+    git commit -m "auto: pre-snapshot commit [strap]"
+    git push
+}
+```
+
+#### 8. Application Configurations
+- **Wezterm**: `.wezterm.lua`
+- **Windows Terminal**: `settings.json`
+- **Git**: `.gitconfig`
+- **SSH**: `.ssh/config` (if applicable)
+
+### Snapshot Storage Format
+```json
+{
+  "timestamp": "2026-02-02T15:30:00Z",
+  "hostname": "JORDAN-PC",
+  "snapshot_version": "1.0",
+  "git_commit": "abc123...",
+  "environment": {
+    "user_path": "...",
+    "user_vars": {...},
+    "system_vars": {...}
+  },
+  "profiles": {
+    "ps5": {...},
+    "ps7": {...},
+    "wezterm": {...}
+  },
+  "python": {
+    "conda": {...},
+    "venvs": {...}
+  },
+  "pm2": {...},
+  "npm_globals": [...],
+  "claude": {
+    "config": {...},
+    "skills": {...},
+    "mcp_servers": {...}
+  },
+  "codex": {
+    "config": {...}
+  },
+  "repositories": [...]
+}
+```
+
+### Validation & Health Checks
+Before considering a snapshot valid:
+- [ ] PATH length under 2047 characters
+- [ ] No duplicate PATH entries
+- [ ] All PATH entries are valid directories
+- [ ] PowerShell profiles load without errors
+- [ ] Conda is functional (`conda --version`)
+- [ ] All tracked git repos have no stale uncommitted/unpushed changes
+- [ ] All Python venvs are valid
+- [ ] pm2 processes are running
+- [ ] MCP servers are accessible
+
+### Restoration Priority
+If corruption occurs, restore in this order:
+1. **Environment variables** (especially PATH) - Restores access to all tools
+2. **PowerShell profiles** - Restores shell functionality
+3. **Conda** - Restores Python environment management
+4. **Git repositories** - Re-clone if necessary
+5. **Python venvs** - Recreate from requirements
+6. **pm2** - Restart processes
+7. **Claude/Codex configs** - Restore AI tooling
+8. **Application configs** - Restore terminal and other tools
+
+### Commands
+
+```powershell
+# Create snapshot (automatic dual-disk backup)
+strap snapshot --auto
+
+# Create snapshot with manual verification
+strap snapshot --verify
+
+# List available snapshots
+strap snapshot list
+
+# Restore from latest snapshot
+strap restore --latest
+
+# Restore from specific snapshot
+strap restore --timestamp 2026-02-02T15:30:00Z
+
+# Doctor check (runs all validations)
+strap doctor --full
+```
 
 ---
 
