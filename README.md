@@ -897,6 +897,17 @@ Then rerun with `--install` or `--start`.
 ### Vite host access
 Vite configs are set to `allowedHosts: true` to allow access from other hosts.
 
+## Chinvex Integration
+
+Strap integrates with [chinvex](https://github.com/chainlist/chinvex) for automatic context management. When you clone, adopt, move, rename, or uninstall repositories, strap keeps chinvex contexts in sync.
+
+See [docs/chinvex-integration.md](docs/chinvex-integration.md) for full documentation.
+
+Quick commands:
+- `strap contexts` - View context sync status
+- `strap sync-chinvex` - Preview reconciliation
+- `strap sync-chinvex --reconcile` - Fix drift
+
 ## Repo Layout
 
 ```
