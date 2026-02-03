@@ -204,64 +204,93 @@ $DefaultBranch = if ($env:BOOTSTRAP_BRANCH) { $env:BOOTSTRAP_BRANCH } else { "ma
 
 function Show-Help {
   @"
-strap usage:
-  strap <project-name> -t <template> [-p <parent-dir>] [--skip-install] [--install] [--start]
-  strap clone <git-url> [--tool] [--name <name>] [--dest <dir>]
-  strap list [--tool] [--software] [--json]
-  strap open <name>
-  strap move <name> --dest <path> [--yes] [--dry-run] [--force] [--rehome-shims]
-  strap rename <name> --to <newName> [--yes] [--dry-run] [--move-folder] [--force]
-  strap adopt [--path <dir>] [--name <name>] [--tool|--software] [--yes] [--dry-run]
-  strap setup [--yes] [--dry-run] [--stack python|node|go|rust] [--repo <name>]
-  strap setup [--venv <path>] [--uv] [--python <exe>] [--pm npm|pnpm|yarn] [--corepack]
-  strap update <name> [--yes] [--dry-run] [--rebase] [--stash] [--setup]
-  strap update --all [--tool] [--software] [--yes] [--dry-run] [--rebase] [--stash] [--setup]
-  strap uninstall <name> [--yes] [--dry-run] [--keep-folder] [--keep-shims]
-  strap shim <name> --- <command...> [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
-  strap shim <name> --cmd "<command>" [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
-  strap doctor [--json]
-  strap migrate [--yes] [--dry-run] [--backup] [--json] [--to <version>] [--plan]
-  strap templatize <templateName> [--source <path>] [--message "<msg>"] [--push] [--force] [--allow-dirty]
+strap - Repository lifecycle management with chinvex integration
 
-Templates:
-  node-ts-service | node-ts-web | python | mono
+USAGE:
+    strap <command> [options]
 
-Flags:
-  --skip-install  skip dependency install
-  --install       run full install after initial commit
-  --start         full install, then start dev
-  --keep          keep doctor artifacts
-  --strap-root    override strap repo root
-  --tool          filter by tool scope or clone to tools directory
-  --software      filter by software scope
-  --json          output raw JSON
-  --name          custom name for cloned repo or shim
-  --dest          full destination path (overrides --tool)
-  --yes           non-interactive mode (no confirmation prompt)
-  --dry-run       show planned actions without executing
-  --keep-folder   preserve repo folder during uninstall
-  --keep-shims    preserve shims during uninstall
-  --cwd           working directory for shim execution
-  --cmd           command string (alternative to --- for complex commands with flags)
-  --repo          attach shim to specific registry entry or run setup for registered repo
-  --stack         force stack selection (python|node|go|rust)
-  --venv          venv directory for Python (default .venv)
-  --uv            use uv for Python installs (default on)
-  --python        python executable for venv creation (default python)
-  --pm            force package manager for Node (npm|pnpm|yarn)
-  --corepack      enable corepack before Node install (default on)
-  --rebase        use git pull --rebase for update
-  --stash         auto-stash dirty working tree before update
-  --setup         run strap setup after successful update
-  --all           update all registered repos (filtered by --tool/--software)
-  --source        source repo for templatize
-  --message       commit message for templatize
-  --push          push after templatize commit
-  --force         overwrite existing file/template (or allow unsafe move/rename)
-  --allow-dirty   allow templatize when strap repo is dirty
-  --rehome-shims  update shim content with new repo path (move only)
-  --move-folder   also rename folder on disk (rename only)
-  --to            new name for rename command
+COMMANDS:
+    clone <url> [--tool|--software] [--no-chinvex]
+        Clone and register a repository
+        --tool        Register as tool (shared 'tools' chinvex context)
+        --software    Register as software (individual context, default)
+        --no-chinvex  Skip chinvex integration
+
+    adopt [--path <dir>] [--tool|--software] [--no-chinvex]
+        Adopt existing repository into registry
+        --tool        Force tool scope (auto-detected from path if omitted)
+        --software    Force software scope
+        --no-chinvex  Skip chinvex integration
+
+    move <name> --dest <path> [--no-chinvex]
+        Move repository to new location
+        Automatically handles scope changes (software <-> tool)
+        --no-chinvex  Skip chinvex path updates
+
+    rename <name> --to <new> [--move-folder] [--no-chinvex]
+        Rename repository (and optionally its folder)
+        --move-folder  Also rename the folder on disk
+        --no-chinvex   Skip chinvex context rename
+
+    uninstall <name> [--no-chinvex]
+        Remove repository (archives chinvex context for software repos)
+        --no-chinvex  Skip chinvex cleanup
+
+    list
+        List all registered repositories
+
+    contexts
+        List chinvex contexts with sync status
+        Shows which contexts are synced, missing, or orphaned
+
+    sync-chinvex [--dry-run|--reconcile]
+        Reconcile registry with chinvex contexts
+        --dry-run     Show what would change (default)
+        --reconcile   Apply reconciliation actions:
+                      - Create missing contexts
+                      - Archive orphaned contexts
+
+    setup <name>
+        Run setup script for repository
+
+    update [name]
+        Update repository (or all if no name given)
+
+    shim <name> --source <path>
+        Create shim for executable
+
+    open <name>
+        Open repository in file explorer
+
+    doctor
+        Check system health
+
+    help
+        Show this help message
+
+GLOBAL FLAGS:
+    --no-chinvex    Skip chinvex integration for this command
+    --tool          Register/treat as tool repository
+    --software      Register/treat as software repository (default)
+
+CHINVEX INTEGRATION:
+    Strap automatically manages chinvex contexts:
+    - Software repos get individual contexts (context name = repo name)
+    - Tool repos share a single 'tools' context
+    - Use 'strap contexts' to view sync status
+    - Use 'strap sync-chinvex --reconcile' to fix drift
+
+    Disable globally via config.json: { "chinvex_integration": false }
+    Or per-command with --no-chinvex flag
+
+EXAMPLES:
+    strap clone https://github.com/user/myproject
+    strap clone https://github.com/user/mytool --tool
+    strap adopt --path P:\software\existing-repo
+    strap move myrepo --dest P:\software\_scripts  # becomes tool
+    strap contexts
+    strap sync-chinvex --reconcile
+
 "@ | Write-Host
 }
 
@@ -5458,6 +5487,26 @@ if ($RepoName -eq "list") {
 
 if ($RepoName -eq "contexts") {
   Invoke-Contexts -StrapRootPath $TemplateRoot
+  exit 0
+}
+
+if ($RepoName -eq "sync-chinvex") {
+  # Parse sync-chinvex specific flags
+  $dryRunFlag = $false
+  $reconcileFlag = $false
+  if ($ExtraArgs) {
+    foreach ($arg in $ExtraArgs) {
+      switch ($arg) {
+        "--dry-run" { $dryRunFlag = $true }
+        "--reconcile" { $reconcileFlag = $true }
+      }
+    }
+  }
+  # Default to dry-run if neither specified
+  if (-not $dryRunFlag -and -not $reconcileFlag) {
+    $dryRunFlag = $true
+  }
+  Invoke-SyncChinvex -DryRun:$dryRunFlag -Reconcile:$reconcileFlag -StrapRootPath $TemplateRoot
   exit 0
 }
 
