@@ -83,14 +83,18 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
 
     Context "Move within same scope (software to software)" {
         BeforeEach {
+            # Clean up any existing test folders
+            Get-ChildItem $script:testSoftwareRoot | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
             # Create source repo
             $script:sourceRepo = Join-Path $script:testSoftwareRoot "moverepo"
             Create-TestRepo $script:sourceRepo
 
             # Create registry
+            $timestamp = (Get-Date).ToUniversalTime().ToString("o")
             @{
-                version = 2
-                updated_at = (Get-Date).ToUniversalTime().ToString("o")
+                registry_version = 1
+                updated_at = $timestamp
                 entries = @(
                     @{
                         id = "moverepo"
@@ -99,6 +103,8 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
                         scope = "software"
                         chinvex_context = "moverepo"
                         shims = @()
+                        created_at = $timestamp
+                        updated_at = $timestamp
                     }
                 )
             } | ConvertTo-Json -Depth 10 | Set-Content $script:testRegistryPath
@@ -111,25 +117,25 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
         It "should update chinvex path when moved within software root" {
             Mock Get-Command { return @{ Name = "chinvex" } } -ParameterFilter { $Name -eq "chinvex" }
 
-            $chinvexCalls = @()
+            $script:chinvexCalls = @()
             Mock Invoke-Chinvex {
                 param($Arguments)
-                $chinvexCalls += ,@($Arguments)
+                $script:chinvexCalls += ,@($Arguments)
                 return $true
             }
 
             Invoke-Move -NameToMove "moverepo" -DestPath $script:destDir -NonInteractive -StrapRootPath $script:testStrapRoot
 
             # Should call ingest with new path, then remove-repo with old path
-            $chinvexCalls.Count | Should Be 2
+            $script:chinvexCalls.Count | Should Be 2
 
             # First call: add new path
-            $ingestCall = $chinvexCalls | Where-Object { $_[0] -eq "ingest" }
+            $ingestCall = $script:chinvexCalls | Where-Object { $_[0] -eq "ingest" }
             $ingestCall | Should Not Be $null
             $ingestCall -contains "--register-only" | Should Be $true
 
             # Second call: remove old path
-            $removeCall = $chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "remove-repo" }
+            $removeCall = $script:chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "remove-repo" }
             $removeCall | Should Not Be $null
         }
 
@@ -148,14 +154,19 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
 
     Context "Move with scope change (software to tool)" {
         BeforeEach {
+            # Clean up any existing test folders
+            Get-ChildItem $script:testSoftwareRoot | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            Get-ChildItem $script:testToolsRoot | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
             # Create source repo in software root
             $script:sourceRepo = Join-Path $script:testSoftwareRoot "scopechange"
             Create-TestRepo $script:sourceRepo
 
             # Create registry
+            $timestamp = (Get-Date).ToUniversalTime().ToString("o")
             @{
-                version = 2
-                updated_at = (Get-Date).ToUniversalTime().ToString("o")
+                registry_version = 1
+                updated_at = $timestamp
                 entries = @(
                     @{
                         id = "scopechange"
@@ -164,6 +175,8 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
                         scope = "software"
                         chinvex_context = "scopechange"
                         shims = @()
+                        created_at = $timestamp
+                        updated_at = $timestamp
                     }
                 )
             } | ConvertTo-Json -Depth 10 | Set-Content $script:testRegistryPath
@@ -194,34 +207,39 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
         It "should archive old context and create tools context on scope change" {
             Mock Get-Command { return @{ Name = "chinvex" } } -ParameterFilter { $Name -eq "chinvex" }
 
-            $chinvexCalls = @()
+            $script:chinvexCalls = @()
             Mock Invoke-Chinvex {
                 param($Arguments)
-                $chinvexCalls += ,@($Arguments)
+                $script:chinvexCalls += ,@($Arguments)
                 return $true
             }
 
             Invoke-Move -NameToMove "scopechange" -DestPath $script:testToolsRoot -NonInteractive -StrapRootPath $script:testStrapRoot
 
             # Should: create tools context, add to tools, archive old context
-            $createCall = $chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "create" -and $_[2] -eq "tools" }
+            $createCall = $script:chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "create" -and $_[2] -eq "tools" }
             $createCall | Should Not Be $null
 
-            $archiveCall = $chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "archive" }
+            $archiveCall = $script:chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "archive" }
             $archiveCall | Should Not Be $null
         }
     }
 
     Context "Move with scope change (tool to software)" {
         BeforeEach {
+            # Clean up any existing test folders
+            Get-ChildItem $script:testSoftwareRoot | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            Get-ChildItem $script:testToolsRoot | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
             # Create source repo in tools root
             $script:sourceRepo = Join-Path $script:testToolsRoot "toolrepo"
             Create-TestRepo $script:sourceRepo
 
             # Create registry
+            $timestamp = (Get-Date).ToUniversalTime().ToString("o")
             @{
-                version = 2
-                updated_at = (Get-Date).ToUniversalTime().ToString("o")
+                registry_version = 1
+                updated_at = $timestamp
                 entries = @(
                     @{
                         id = "toolrepo"
@@ -230,6 +248,8 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
                         scope = "tool"
                         chinvex_context = "tools"
                         shims = @()
+                        created_at = $timestamp
+                        updated_at = $timestamp
                     }
                 )
             } | ConvertTo-Json -Depth 10 | Set-Content $script:testRegistryPath
@@ -260,32 +280,36 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
         It "should remove from tools context and create individual context on scope change" {
             Mock Get-Command { return @{ Name = "chinvex" } } -ParameterFilter { $Name -eq "chinvex" }
 
-            $chinvexCalls = @()
+            $script:chinvexCalls = @()
             Mock Invoke-Chinvex {
                 param($Arguments)
-                $chinvexCalls += ,@($Arguments)
+                $script:chinvexCalls += ,@($Arguments)
                 return $true
             }
 
             Invoke-Move -NameToMove "toolrepo" -DestPath $script:testSoftwareRoot -NonInteractive -StrapRootPath $script:testStrapRoot
 
             # Should: create individual context, add to it, remove from tools
-            $createCall = $chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "create" -and $_[2] -eq "toolrepo" }
+            $createCall = $script:chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "create" -and $_[2] -eq "toolrepo" }
             $createCall | Should Not Be $null
 
-            $removeCall = $chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "remove-repo" }
+            $removeCall = $script:chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "remove-repo" }
             $removeCall | Should Not Be $null
         }
     }
 
     Context "Chinvex failure handling" {
         BeforeEach {
+            # Clean up any existing test folders
+            Get-ChildItem $script:testSoftwareRoot | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
             $script:sourceRepo = Join-Path $script:testSoftwareRoot "failmove"
             Create-TestRepo $script:sourceRepo
 
+            $timestamp = (Get-Date).ToUniversalTime().ToString("o")
             @{
-                version = 2
-                updated_at = (Get-Date).ToUniversalTime().ToString("o")
+                registry_version = 1
+                updated_at = $timestamp
                 entries = @(
                     @{
                         id = "failmove"
@@ -294,6 +318,8 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
                         scope = "software"
                         chinvex_context = "failmove"
                         shims = @()
+                        created_at = $timestamp
+                        updated_at = $timestamp
                     }
                 )
             } | ConvertTo-Json -Depth 10 | Set-Content $script:testRegistryPath
@@ -331,12 +357,16 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
 
     Context "--no-chinvex flag" {
         BeforeEach {
+            # Clean up any existing test folders
+            Get-ChildItem $script:testSoftwareRoot | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
             $script:sourceRepo = Join-Path $script:testSoftwareRoot "nochxmove"
             Create-TestRepo $script:sourceRepo
 
+            $timestamp = (Get-Date).ToUniversalTime().ToString("o")
             @{
-                version = 2
-                updated_at = (Get-Date).ToUniversalTime().ToString("o")
+                registry_version = 1
+                updated_at = $timestamp
                 entries = @(
                     @{
                         id = "nochxmove"
@@ -345,6 +375,8 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
                         scope = "software"
                         chinvex_context = "nochxmove"
                         shims = @()
+                        created_at = $timestamp
+                        updated_at = $timestamp
                     }
                 )
             } | ConvertTo-Json -Depth 10 | Set-Content $script:testRegistryPath
