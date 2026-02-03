@@ -2385,6 +2385,7 @@ function Invoke-Rename {
     [switch] $DryRunMode,
     [switch] $MoveFolder,
     [switch] $ForceOverwrite,
+    [switch] $NoChinvex,
     [string] $StrapRootPath
   )
 
@@ -2402,6 +2403,11 @@ function Invoke-Rename {
   if (-not $entry) {
     Die "No entry found with name '$NameToRename'. Use 'strap list' to see all entries."
   }
+
+  # Store old values for chinvex operations
+  $oldName = $entry.name
+  $oldChinvexContext = $entry.chinvex_context
+  $oldPath = $entry.path
 
   # Validate new name
   if ([string]::IsNullOrWhiteSpace($NewName)) {
@@ -2423,8 +2429,8 @@ function Invoke-Rename {
     Die "Registry already contains an entry named '$NewName'"
   }
 
-  $oldPath = $entry.path
   $newPath = $null
+  $folderMoved = $false
 
   # Compute new path if --move-folder
   if ($MoveFolder) {
@@ -2482,6 +2488,7 @@ function Invoke-Rename {
       Move-Item -LiteralPath $oldPath -Destination $newPath -ErrorAction Stop
       Ok "Renamed folder: $oldPath -> $newPath"
       $entry.path = $newPath
+      $folderMoved = $true
     } catch {
       Die "Failed to rename folder: $_"
     }
@@ -2494,6 +2501,35 @@ function Invoke-Rename {
     $entry.id = $NewName
   }
   $entry.updated_at = Get-Date -Format "o"
+
+  # Chinvex integration
+  if (Test-ChinvexEnabled -NoChinvex:$NoChinvex -StrapRootPath $StrapRootPath) {
+    if ($entry.scope -eq 'software' -and $oldChinvexContext) {
+      # Rename the chinvex context
+      $renamed = Invoke-Chinvex -Arguments @("context", "rename", $oldName, "--to", $NewName)
+      if ($renamed) {
+        $entry.chinvex_context = $NewName
+        Info "Chinvex: renamed context '$oldName' -> '$NewName'"
+
+        # If folder was also moved, update the path in the context
+        if ($folderMoved) {
+          $added = Invoke-Chinvex -Arguments @("ingest", "--context", $NewName, "--repo", $newPath, "--register-only")
+          if ($added) {
+            Invoke-Chinvex -Arguments @("context", "remove-repo", $NewName, "--repo", $oldPath) | Out-Null
+            Info "Chinvex: updated path in context '$NewName'"
+          } else {
+            $entry.chinvex_context = $null
+            Warn "Chinvex path update failed. Context marked for reconciliation."
+          }
+        }
+      } else {
+        $entry.chinvex_context = $null
+        Warn "Chinvex context rename failed. Context marked for reconciliation."
+      }
+    }
+    # Tool scope: no chinvex action needed (stays in 'tools' context)
+    # chinvex_context remains 'tools'
+  }
 
   # Save registry
   try {
