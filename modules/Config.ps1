@@ -60,7 +60,16 @@ function Load-Registry($configObj) {
     return @()
   }
 
-  $json = Get-Content -LiteralPath $registryPath -Raw | ConvertFrom-Json
+  $content = Get-Content -LiteralPath $registryPath -Raw
+
+  # Handle completely empty file
+  if ([string]::IsNullOrWhiteSpace($content)) {
+    $empty = @{ version = $script:LATEST_REGISTRY_VERSION; repos = @() } | ConvertTo-Json -Depth 10
+    $empty | Set-Content -LiteralPath $registryPath -NoNewline
+    return @()
+  }
+
+  $json = $content | ConvertFrom-Json
 
   # Handle legacy array format (v1)
   if ($json -is [System.Array]) {
