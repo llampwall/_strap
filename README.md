@@ -36,7 +36,7 @@ Complete Windows dev environment manager with three capabilities:
 - Git
 - Node 20+ (for node templates) + pnpm (via Corepack or global install)
 - Python 3.11+ (for python template)
-- `build/context-hook.cmd` (bundled in this repo)
+- `templates/context-hook.cmd` (bundled in this repo)
 
 ## Quick Start
 
@@ -430,7 +430,7 @@ Strap has two modes:
 - Optionally installs deps:
   - default: minimal/lockfile-only (node/mono)
   - `--install` / `--start`: full install
-- Installs the context hook (`build/context-hook.cmd install`)
+- Installs the context hook (`templates/context-hook.cmd install`)
 - Creates an initial commit
 - Prints next steps (and starts dev if `--start`)
 
@@ -916,17 +916,19 @@ templates/node-ts-service/  # service template
 templates/node-ts-web/      # web template
 templates/python/           # python template
 templates/mono/             # monorepo template
-build/
-  strap.ps1                 # main script (bootstrapping + lifecycle)
-  strap.cmd                 # entry point
-  context-hook.cmd          # context gathering hook
-  registry.json             # lifecycle management registry
-test-*.ps1                  # test suites for each command
+  context-hook.cmd          # context gathering hook (copied to new projects)
+  context-hook.ps1          # context hook PowerShell script
+strap.ps1                   # main script (bootstrapping + lifecycle)
+strap.cmd                   # entry point
+config.json                 # system configuration
+registry.json               # lifecycle management registry
+modules/                    # core functionality modules
+tests/                      # test suites
 ```
 
 ## Testing
 
-This project uses Pester 5 for automated testing. See [TESTING.md](TESTING.md) for detailed documentation.
+This project uses Pester 5 for automated testing. See [TESTING.md](docs/TESTING.md) for detailed documentation.
 
 Quick start:
 ```powershell

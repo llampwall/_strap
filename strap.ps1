@@ -1641,14 +1641,15 @@ if ($SkipInstall.IsPresent) {
   }
 }
 
-$ContextHookCmd = Join-Path $TemplateRoot "context-hook.cmd"
-$ContextHookPs1 = Join-Path $TemplateRoot "context-hook.ps1"
+$TemplatesDir = Join-Path $PSScriptRoot "templates"
+$ContextHookCmd = Join-Path $TemplatesDir "context-hook.cmd"
+$ContextHookPs1 = Join-Path $TemplatesDir "context-hook.ps1"
 if (Test-Path $ContextHookCmd) {
   & $ContextHookCmd install | Out-Null
 } elseif (Test-Path $ContextHookPs1) {
   & $ContextHookPs1 install | Out-Null
 } else {
-  Die "context-hook not found in strap root"
+  Die "context-hook not found in templates directory"
 }
 
 Normalize-TextFiles $Dest
