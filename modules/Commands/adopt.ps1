@@ -171,7 +171,24 @@ function Invoke-Adopt {
         $updatedRegistry += $item
       }
       Save-Registry $config $updatedRegistry
+      $newRegistry = $updatedRegistry
     }
+  }
+
+  # Auto-discover and create shims
+  $autoShims = Invoke-ShimAutoDiscover -RepoEntry $entry -Config $config -Registry $newRegistry
+  if ($autoShims.Count -gt 0) {
+    # Update entry with created shims
+    $entry.shims = $autoShims
+    # Re-save registry with shims
+    $finalRegistry = @()
+    foreach ($item in $newRegistry) {
+      if ($item.name -eq $name) {
+        $item.shims = $autoShims
+      }
+      $finalRegistry += $item
+    }
+    Save-Registry $config $finalRegistry
   }
 
   Ok "Adopted: $name ($resolvedPath)"

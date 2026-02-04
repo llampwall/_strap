@@ -1,4 +1,38 @@
 {
-  "repos": [],
-  "version": 3
+  "version": 3,
+  "repos": [
+    {
+      "id": "chinvex",
+      "name": "chinvex",
+      "url": "https://github.com/llampwall/chinvex.git",
+      "path": "P:\\software\\chinvex",
+      "chinvex_depth": "full",
+      "status": "active",
+      "tags": [],
+      "chinvex_context": null,
+      "shims": [
+        {
+          "exe": "P:\\software\\chinvex\\.venv\\Scripts\\chinvex.exe",
+          "venv": "P:\\software\\chinvex\\.venv",
+          "type": "venv",
+          "ps1Path": "P:\\software\\bin\\chinvex.ps1",
+          "baseArgs": null,
+          "name": "chinvex"
+        },
+        {
+          "exe": "P:\\software\\chinvex\\.venv\\Scripts\\chinvex-mcp.exe",
+          "venv": "P:\\software\\chinvex\\.venv",
+          "type": "venv",
+          "ps1Path": "P:\\software\\bin\\chinvex-mcp.ps1",
+          "baseArgs": null,
+          "name": "chinvex-mcp"
+        }
+      ],
+      "stack": "python",
+      "last_head": "634b8041e55728f13db18f2136566e20f42b9cb7",
+      "default_branch": "master",
+      "created_at": "2026-02-04T17:54:19Z",
+      "updated_at": "2026-02-04T17:54:19Z"
+    }
+  ]
 }

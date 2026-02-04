@@ -195,7 +195,7 @@ function Invoke-Shim {
 
     switch ($ShimType) {
         "venv" {
-            $resolvedVenv = Resolve-ShimVenvPath -RepoPath $repoEntry.repoPath -ExplicitPath $VenvPath
+            $resolvedVenv = Resolve-ShimVenvPath -RepoPath $repoEntry.path -ExplicitPath $VenvPath
             $resolution = Resolve-ShimVenvExe -Exe $shimExe -VenvPath $resolvedVenv
             $resolvedExe = $resolution.resolvedPath
             if (-not $resolution.exists) {
@@ -417,6 +417,196 @@ function Resolve-ShimNodeExe {
     }
 
     Die "Node not found. Set defaults.nodeExe in config or provide --node-exe."
+}
+
+#endregion
+
+#region Auto-Discovery
+
+function Invoke-ShimAutoDiscover {
+    <#
+    .SYNOPSIS
+        Automatically discovers and creates shims based on repo stack type.
+    .DESCRIPTION
+        Scans repo for executable entry points based on detected stack:
+        - Python: parses pyproject.toml and setup.py for console_scripts
+        - Node: parses package.json bin field
+        Creates appropriate shim types (venv for Python, node for Node).
+    .PARAMETER RepoEntry
+        Registry entry for the repo.
+    .PARAMETER Config
+        Strap configuration object.
+    .PARAMETER Registry
+        Full registry array.
+    .OUTPUTS
+        Array of created shim entries.
+    #>
+    param(
+        [Parameter(Mandatory)][object]$RepoEntry,
+        [Parameter(Mandatory)][object]$Config,
+        [Parameter(Mandatory)][array]$Registry
+    )
+
+    $repoPath = $RepoEntry.path
+    $stack = $RepoEntry.stack
+    $discovered = @()
+
+    switch ($stack) {
+        "python" {
+            $discovered = Discover-PythonShims -RepoPath $repoPath
+        }
+        "node" {
+            $discovered = Discover-NodeShims -RepoPath $repoPath
+        }
+        default {
+            # No auto-discovery for other stacks yet
+            return @()
+        }
+    }
+
+    if ($discovered.Count -eq 0) {
+        return @()
+    }
+
+    Write-Host "  Auto-discovered $($discovered.Count) shim(s) for $stack stack" -ForegroundColor Cyan
+
+    $createdShims = @()
+    foreach ($spec in $discovered) {
+        try {
+            $shimArgs = @{
+                ShimName = $spec.name
+                Config = $Config
+                Registry = $Registry
+                RegistryEntryName = $RepoEntry.name
+                ShimType = $spec.type
+            }
+
+            if ($spec.exe) { $shimArgs.Exe = $spec.exe }
+            if ($spec.baseArgs) { $shimArgs.BaseArgs = $spec.baseArgs }
+            if ($spec.venvPath) { $shimArgs.VenvPath = $spec.venvPath }
+            if ($spec.cwd) { $shimArgs.WorkingDir = $spec.cwd }
+
+            $shimEntry = Invoke-Shim @shimArgs
+            if ($shimEntry) {
+                $createdShims += $shimEntry
+            }
+        } catch {
+            Warn "Failed to create auto-discovered shim '$($spec.name)': $_"
+        }
+    }
+
+    return $createdShims
+}
+
+function Discover-PythonShims {
+    param([Parameter(Mandatory)][string]$RepoPath)
+
+    $shims = @()
+
+    # Try pyproject.toml first
+    $pyprojectPath = Join-Path $RepoPath "pyproject.toml"
+    if (Test-Path $pyprojectPath) {
+        $content = Get-Content -LiteralPath $pyprojectPath -Raw
+
+        # Parse [project.scripts] section
+        if ($content -match '(?ms)\[project\.scripts\]\s*\n(.*?)(?=\n\[|\z)') {
+            $scriptsSection = $matches[1]
+            $scriptsSection -split "`n" | ForEach-Object {
+                $line = $_.Trim()
+                if ($line -and $line -match '^([a-zA-Z0-9_-]+)\s*=') {
+                    $shimName = $matches[1]
+                    $shims += @{
+                        name = $shimName
+                        type = "venv"
+                        exe = $shimName
+                    }
+                }
+            }
+        }
+
+        # Parse [tool.poetry.scripts] section
+        if ($content -match '(?ms)\[tool\.poetry\.scripts\]\s*\n(.*?)(?=\n\[|\z)') {
+            $scriptsSection = $matches[1]
+            $scriptsSection -split "`n" | ForEach-Object {
+                $line = $_.Trim()
+                if ($line -and $line -match '^([a-zA-Z0-9_-]+)\s*=') {
+                    $shimName = $matches[1]
+                    if (-not ($shims | Where-Object { $_.name -eq $shimName })) {
+                        $shims += @{
+                            name = $shimName
+                            type = "venv"
+                            exe = $shimName
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    # Try setup.py if no pyproject.toml or no scripts found
+    if ($shims.Count -eq 0) {
+        $setupPath = Join-Path $RepoPath "setup.py"
+        if (Test-Path $setupPath) {
+            $content = Get-Content -LiteralPath $setupPath -Raw
+
+            # Simple regex parsing for console_scripts (not perfect but works for common cases)
+            if ($content -match '(?ms)console_scripts.*?=.*?\[(.*?)\]') {
+                $scriptsBlock = $matches[1]
+                $scriptsBlock -split ',' | ForEach-Object {
+                    if ($_ -match "[`'`"]\s*([a-zA-Z0-9_-]+)\s*=") {
+                        $shimName = $matches[1].Trim()
+                        $shims += @{
+                            name = $shimName
+                            type = "venv"
+                            exe = $shimName
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return $shims
+}
+
+function Discover-NodeShims {
+    param([Parameter(Mandatory)][string]$RepoPath)
+
+    $shims = @()
+    $packageJsonPath = Join-Path $RepoPath "package.json"
+
+    if (-not (Test-Path $packageJsonPath)) {
+        return @()
+    }
+
+    try {
+        $packageJson = Get-Content -LiteralPath $packageJsonPath -Raw | ConvertFrom-Json
+
+        if ($packageJson.bin) {
+            if ($packageJson.bin -is [string]) {
+                # Single bin: use package name as shim name
+                $shimName = $packageJson.name -replace '^@.*?/', ''
+                $shims += @{
+                    name = $shimName
+                    type = "node"
+                    exe = $packageJson.bin
+                }
+            } elseif ($packageJson.bin -is [PSCustomObject]) {
+                # Multiple bins: create shim for each
+                $packageJson.bin.PSObject.Properties | ForEach-Object {
+                    $shims += @{
+                        name = $_.Name
+                        type = "node"
+                        exe = $_.Value
+                    }
+                }
+            }
+        }
+    } catch {
+        Warn "Failed to parse package.json: $_"
+    }
+
+    return $shims
 }
 
 #endregion

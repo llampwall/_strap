@@ -112,14 +112,32 @@ function Invoke-Clone {
         $updatedRegistry += $item
       }
       Save-Registry $config $updatedRegistry
+      $newRegistry = $updatedRegistry
     }
+  }
+
+  # Auto-discover and create shims
+  $autoShims = Invoke-ShimAutoDiscover -RepoEntry $entry -Config $config -Registry $newRegistry
+  if ($autoShims.Count -gt 0) {
+    # Update entry with created shims
+    $entry.shims = $autoShims
+    # Re-save registry with shims
+    $finalRegistry = @()
+    foreach ($item in $newRegistry) {
+      if ($item.name -eq $repoName) {
+        $item.shims = $autoShims
+      }
+      $finalRegistry += $item
+    }
+    Save-Registry $config $finalRegistry
   }
 
   Ok "Added to registry"
 
-  # TODO: Offer to run setup / create shim
   Info "Next steps:"
   Info "  strap setup --repo $repoName"
-  Info "  strap shim <name> --- <command> --repo $repoName"
+  if ($autoShims.Count -eq 0) {
+    Info "  strap shim <name> --exe <path> --repo $repoName  # Create shims manually if needed"
+  }
 }
 
