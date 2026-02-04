@@ -409,7 +409,7 @@ function Replace-Tokens($root, $tokens) {
 }
 
 function Get-TokenMatches($root) {
-  $pattern = "\{\{REPO_NAME\}\}|\{\{PY_PACKAGE\}\}|<REPO_NAME>|<PY_PACKAGE>"
+  $pattern = "\{\{REPO_NAME\}\}|\{\{PY_PACKAGE\}\}"
   $ignoreGlobs = @(
     "!**/.git/**",
     "!**/node_modules/**",
@@ -834,18 +834,18 @@ function Invoke-Doctor {
 
     Write-Host "PATH check:" -ForegroundColor Yellow
     if ($report.path_check.shims_in_path) {
-      Write-Host "  ✓ shims_root in PATH: $($report.path_check.path_entry)" -ForegroundColor Green
+      Write-Host "  [OK] shims_root in PATH: $($report.path_check.path_entry)" -ForegroundColor Green
     } else {
-      Write-Host "  ✗ shims_root NOT in PATH" -ForegroundColor Red
+      Write-Host "  [X] shims_root NOT in PATH" -ForegroundColor Red
     }
     Write-Host ""
 
     Write-Host "Tool availability:" -ForegroundColor Yellow
     foreach ($tool in $report.tools) {
       if ($tool.found) {
-        Write-Host "  ✓ $($tool.name.PadRight(10)) $($tool.version)" -ForegroundColor Green
+        Write-Host "  [OK] $($tool.name.PadRight(10)) $($tool.version)" -ForegroundColor Green
       } else {
-        Write-Host "  ✗ $($tool.name.PadRight(10)) not found" -ForegroundColor Red
+        Write-Host "  [X] $($tool.name.PadRight(10)) not found" -ForegroundColor Red
       }
     }
     Write-Host ""
@@ -854,22 +854,22 @@ function Invoke-Doctor {
     if (-not $report.registry_check.exists) {
       Write-Host "  Registry: missing (ok if new)" -ForegroundColor Yellow
     } elseif (-not $report.registry_check.valid_json) {
-      Write-Host "  ✗ Invalid JSON" -ForegroundColor Red
+      Write-Host "  [X] Invalid JSON" -ForegroundColor Red
       foreach ($issue in $report.registry_check.issues) {
         Write-Host "    - $issue" -ForegroundColor Red
       }
     } else {
-      Write-Host "  ✓ Valid JSON" -ForegroundColor Green
+      Write-Host "  [OK] Valid JSON" -ForegroundColor Green
       if ($report.registry_check.ContainsKey('version') -and $report.registry_check.version -ne $null) {
         $versionText = "Version $($report.registry_check.version)"
         if ($report.registry_check.version -lt $script:LATEST_REGISTRY_VERSION) {
-          Write-Host "  ⚠ $versionText (outdated, latest: $script:LATEST_REGISTRY_VERSION)" -ForegroundColor Yellow
+          Write-Host "  [!] $versionText (outdated, latest: $script:LATEST_REGISTRY_VERSION)" -ForegroundColor Yellow
         } else {
-          Write-Host "  ✓ $versionText (current)" -ForegroundColor Green
+          Write-Host "  [OK] $versionText (current)" -ForegroundColor Green
         }
       }
       if ($report.registry_check.issues.Count -eq 0) {
-        Write-Host "  ✓ No issues found" -ForegroundColor Green
+        Write-Host "  [OK] No issues found" -ForegroundColor Green
       } else {
         Write-Host "  Issues:" -ForegroundColor Yellow
         foreach ($issue in $report.registry_check.issues) {
@@ -1565,8 +1565,6 @@ $pyPackage = ($RepoName -replace "-", "_")
 $tokens = @{
   "{{REPO_NAME}}" = $RepoName
   "{{PY_PACKAGE}}" = $pyPackage
-  "<REPO_NAME>" = $RepoName
-  "<PY_PACKAGE>" = $pyPackage
   "{{YEAR}}"      = "$year"
 }
 
