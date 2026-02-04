@@ -1,6 +1,3 @@
-# Build output
-build/
-
 # Python (for any helper scripts)
 __pycache__/
 *.py[cod]
@@ -46,3 +43,6 @@ Desktop.ini
 
 # Logs
 *.log
+
+# Build output
+build/

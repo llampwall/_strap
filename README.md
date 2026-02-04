@@ -458,7 +458,7 @@ Strap has two modes:
 
 ### Registry System
 
-Lifecycle management uses a JSON registry at `build/registry.json` to track all cloned repos and their associated shims.
+Lifecycle management uses a JSON registry at `/registry.json` to track all cloned repos and their associated shims.
 
 **Registry metadata (V2):**
 - `registry_version` — schema version (current: 2)

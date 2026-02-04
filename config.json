@@ -10,5 +10,5 @@
     "pwshExe": "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.5.4.0_x64__8wekyb3d8bbwe\\pwsh.exe",
     "nodeExe": "C:\\nvm4w\\nodejs\\node.exe"
   },
-  "registry": "P:\\software\\_strap\\build\\registry.json"
+  "registry": "P:\\software\\_strap\\registry.json"
 }
