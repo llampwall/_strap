@@ -154,7 +154,7 @@ strap doctor [--json]
 
 **clone**
 - `<github-url>` — GitHub repository URL (https or git)
-- `--tool` — clone into `P:\software\_scripts` instead of `P:\software`
+- `--tool` — use tool preset (depth=light, status=stable, tags=[third-party]); all repos clone to `P:\software`
 - `--name <custom-name>` — override the repo name (default: extracted from URL)
 - `--yes` — skip confirmation prompts
 
@@ -180,14 +180,13 @@ strap doctor [--json]
 **adopt**
 - `--path <dir>` — path to existing repo (default: current directory)
 - `--name <name>` — custom registry name (default: folder name)
-- `--tool` — force scope=tool
-- `--software` — force scope=software
+- `--tool` — use tool preset (depth=light, status=stable, tags=[third-party])
+- `--software` — use software preset (depth=full, status=active, default)
 - `--yes` — skip confirmation prompts
 - `--dry-run` — preview only, no registry write
 - `--scan <dir>` — discover and adopt all items in directory (top-level by default)
 - `--recursive` — search subdirectories when scanning
 - `--allow-auto-archive` — with `--yes`, apply archive suggestions automatically
-- `--scope <tool|software|archive>` — override scope heuristic for all discovered items
 
 **setup**
 - `--repo <name>` — run setup for a registered repo (changes to its directory)
@@ -484,8 +483,8 @@ Strap has two modes:
 
 Lifecycle management uses a JSON registry at `registry.json` (in the strap directory) to track all cloned repos and their associated shims.
 
-**Registry metadata (V2):**
-- `version` — schema version (current: 2)
+**Registry metadata (V3):**
+- `version` — schema version (current: 3, auto-migrates from V2)
 - `updated_at` — ISO 8601 timestamp of last registry update
 - `metadata.trust_mode` — "registry-first" (default) or "disk-discovery" (recovery mode)
 
@@ -496,9 +495,12 @@ Lifecycle management uses a JSON registry at `registry.json` (in the strap direc
 **Each entry includes:**
 - `id` — unique identifier
 - `name` — repo name (used for commands)
-- `scope` — "tool", "software", or "archive"
-- `repoPath` — absolute path to the cloned repository
+- `chinvex_depth` — ingestion depth: "full" (deep analysis), "light" (minimal), or "index" (metadata only)
+- `status` — lifecycle state: "active" (in development), "stable" (mature/unchanging), or "dormant" (archived/inactive)
+- `tags` — array of free-form tags for grouping (e.g., `["third-party"]`, `["ml", "web"]`)
+- `path` — absolute path to the cloned repository
 - `url` — git remote URL (if available)
+- `chinvex_context` — chinvex context name (usually matches repo name)
 - `shims` — array of shim metadata objects (see Shim System section)
 - `created_at` — ISO 8601 timestamp
 - `updated_at` — ISO 8601 timestamp
@@ -510,6 +512,14 @@ Lifecycle management uses a JSON registry at `registry.json` (in the strap direc
 - `setup_status` — setup execution status: "success" or "fail" (added by `strap setup`)
 - `archived_at` — ISO 8601 timestamp when moved to archive (null if not archived)
 - `last_commit` — git commit hash for audit index optimization (null if not a git repo)
+
+**V2→V3 Migration:**
+The V2 `scope` field has been replaced with three orthogonal metadata fields for better flexibility:
+- Old V2 `scope: "tool"` → V3 `chinvex_depth: "light"`, `status: "stable"`, `tags: ["third-party"]`
+- Old V2 `scope: "software"` → V3 `chinvex_depth: "full"`, `status: "active"`, `tags: []`
+- Old V2 `scope: "archive"` → V3 `chinvex_depth: "index"`, `status: "dormant"`, `tags: []`
+
+Migration happens automatically on first registry load. All repos now live in `P:\software` (flat structure).
 
 The registry enables:
 - Tracking which repos have been cloned
@@ -859,12 +869,12 @@ strap adopt --scan C:\Code --scope software --yes
 
 **Classification heuristics:**
 - **Git repos:**
-  - Single script + README → suggests `tool`
-  - Inactive (last commit >180 days) + no references + no uncommitted changes → suggests `archive`
-  - Otherwise → suggests `software`
+  - Single script + README → suggests `--tool` preset (light depth, stable status)
+  - Inactive (last commit >180 days) + no references + no uncommitted changes → suggests archive metadata (index depth, dormant status)
+  - Otherwise → suggests default preset (full depth, active status)
 - **Non-git directories:**
-  - Mostly scripts (`.ps1`, `.py`, `.js`, `.sh`) → suggests `tool`
-  - Inactive (last modified >180 days) → suggests `archive`
+  - Mostly scripts (`.ps1`, `.py`, `.js`, `.sh`) → suggests `--tool` preset
+  - Inactive (last modified >180 days) → suggests archive metadata
   - Otherwise → prompts for classification
 - **Standalone files:** Surfaced in report but skipped by default
 
@@ -1068,22 +1078,26 @@ Vite configs are set to `allowedHosts: true` to allow access from other hosts.
 
 When you manage repos with strap, chinvex contexts are created/updated automatically:
 
-- `strap clone <url>` → Creates repo entry in registry **and** registers path in chinvex
-- `strap adopt <path>` → Registers repo in registry **and** adds to chinvex
+- `strap clone <url>` → Creates repo entry in registry **and** registers path in chinvex with metadata
+- `strap adopt <path>` → Registers repo in registry **and** adds to chinvex with metadata
 - `strap move <name>` → Updates registry path **and** updates chinvex path
 - `strap rename <name>` → Updates registry name **and** updates chinvex context name
-- `strap uninstall <name>` → Removes from registry **and** archives chinvex context
+- `strap uninstall <name>` → Removes from registry **and** deletes chinvex context
 
 **No manual chinvex commands needed.** The integration is automatic and keeps both systems in perfect sync.
 
-### Scope-Based Context Mapping
+### Metadata-Driven Contexts (V3)
 
-Strap maps registry scopes to chinvex contexts:
-- **software** scope → Individual chinvex context per repo (e.g., `chinvex` context for the chinvex repo)
-- **tool** scope → Shared `tools` context (all tool repos share one context)
-- **archive** scope → Shared `archive` context (archived repos)
+Strap passes all metadata to chinvex for each repo:
+- **Individual contexts**: Each repo gets its own chinvex context (context name = repo name)
+- **Metadata forwarding**: All three fields (`chinvex_depth`, `status`, `tags`) are passed to chinvex
+- **Chinvex decides**: Chinvex receives the metadata and uses what it needs for ingestion and indexing
 
-This means your chinvex contexts automatically reflect your organizational structure.
+**Presets** (CLI convenience):
+- `--tool` flag → Sets `depth=light`, `status=stable`, `tags=["third-party"]`
+- Default → Sets `depth=full`, `status=active`, `tags=[]`
+
+This decouples strap's organizational model from chinvex's ingestion strategy, allowing each tool to evolve independently.
 
 ### Global Opt-Out
 
