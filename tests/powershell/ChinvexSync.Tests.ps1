@@ -75,7 +75,7 @@ Describe "Invoke-SyncChinvex" -Tag "Task11" {
             $result = Invoke-SyncChinvex -StrapRootPath $script:testStrapRoot
 
             # Should not have called any mutating chinvex commands
-            Assert-MockCalled Invoke-Chinvex -Times 0
+            Should -Invoke Invoke-Chinvex -Times 0
         }
 
         It "should report what would be done without making changes" {
@@ -84,10 +84,10 @@ Describe "Invoke-SyncChinvex" -Tag "Task11" {
 
             $result = Invoke-SyncChinvex -StrapRootPath $script:testStrapRoot -OutputMode 'Object'
 
-            $result.Actions.Count | Should Be 1
-            $result.Actions[0].Action | Should Be "create"
-            $result.Actions[0].Context | Should Be "unsynced-repo"
-            $result.DryRun | Should Be $true
+            $result.Actions.Count | Should -Be 1
+            $result.Actions[0].Action | Should -Be "create"
+            $result.Actions[0].Context | Should -Be "unsynced-repo"
+            $result.DryRun | Should -Be $true
         }
     }
 
@@ -118,7 +118,7 @@ Describe "Invoke-SyncChinvex" -Tag "Task11" {
             Invoke-SyncChinvex -DryRun -StrapRootPath $script:testStrapRoot
 
             $afterRegistry = Get-Content $script:testRegistryPath -Raw
-            $afterRegistry | Should Be $beforeRegistry
+            $afterRegistry | Should -Be $beforeRegistry
         }
 
         It "should list actions that would be taken" {
@@ -127,8 +127,8 @@ Describe "Invoke-SyncChinvex" -Tag "Task11" {
 
             $result = Invoke-SyncChinvex -DryRun -StrapRootPath $script:testStrapRoot -OutputMode 'Object'
 
-            $result.Actions | Should Not Be $null
-            $result.Actions[0].Action | Should Be "create"
+            $result.Actions | Should -Not -Be $null
+            $result.Actions[0].Action | Should -Be "create"
         }
     }
 
@@ -158,7 +158,7 @@ Describe "Invoke-SyncChinvex" -Tag "Task11" {
                 Invoke-SyncChinvex -Reconcile -StrapRootPath $script:testStrapRoot
 
                 # Should have called context create and ingest
-                Assert-MockCalled Invoke-Chinvex -ParameterFilter {
+                Should -Invoke Invoke-Chinvex -ParameterFilter {
                     $Arguments[0] -eq "context" -and $Arguments[1] -eq "create" -and $Arguments[2] -eq "needs-sync"
                 }
             }
@@ -172,7 +172,7 @@ Describe "Invoke-SyncChinvex" -Tag "Task11" {
 
                 $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
                 $entry = $registry.entries | Where-Object { $_.name -eq "needs-sync" }
-                $entry.chinvex_context | Should Be "needs-sync"
+                $entry.chinvex_context | Should -Be "needs-sync"
             }
     }
 
@@ -202,7 +202,7 @@ Describe "Invoke-SyncChinvex" -Tag "Task11" {
                 Invoke-SyncChinvex -Reconcile -StrapRootPath $script:testStrapRoot
 
                 # Should have called context create for tools
-                Assert-MockCalled Invoke-Chinvex -ParameterFilter {
+                Should -Invoke Invoke-Chinvex -ParameterFilter {
                     $Arguments[0] -eq "context" -and $Arguments[1] -eq "create" -and $Arguments[2] -eq "tools"
                 }
             }
@@ -216,7 +216,7 @@ Describe "Invoke-SyncChinvex" -Tag "Task11" {
 
                 $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
                 $entry = $registry.entries | Where-Object { $_.name -eq "unsynced-tool" }
-                $entry.chinvex_context | Should Be "tools"
+                $entry.chinvex_context | Should -Be "tools"
             }
     }
 
@@ -240,7 +240,7 @@ Describe "Invoke-SyncChinvex" -Tag "Task11" {
 
                 Invoke-SyncChinvex -Reconcile -StrapRootPath $script:testStrapRoot
 
-                Assert-MockCalled Invoke-Chinvex -ParameterFilter {
+                Should -Invoke Invoke-Chinvex -ParameterFilter {
                     $Arguments[0] -eq "context" -and $Arguments[1] -eq "archive" -and $Arguments[2] -eq "orphaned-project"
                 }
             }
@@ -262,8 +262,8 @@ Describe "Invoke-SyncChinvex" -Tag "Task11" {
 
                 Invoke-SyncChinvex -Reconcile -StrapRootPath $script:testStrapRoot
 
-                ($script:archiveCalls -contains "tools") | Should Be $false
-                ($script:archiveCalls -contains "archive") | Should Be $false
+                ($script:archiveCalls -contains "tools") | Should -Be $false
+                ($script:archiveCalls -contains "archive") | Should -Be $false
             }
     }
 
@@ -294,7 +294,7 @@ Describe "Invoke-SyncChinvex" -Tag "Task11" {
 
                 Invoke-SyncChinvex -Reconcile -StrapRootPath $script:testStrapRoot
 
-                ($script:archiveCalls -contains "tools") | Should Be $false
+                ($script:archiveCalls -contains "tools") | Should -Be $false
             }
     }
 
@@ -342,9 +342,9 @@ Describe "Invoke-SyncChinvex" -Tag "Task11" {
             } catch {
                 $error = $_
             }
-            $error | Should Be $null
+            $error | Should -Be $null
 
-            Assert-MockCalled Invoke-Chinvex -Times 2  # create + ingest
+            Should -Invoke Invoke-Chinvex -Times 2  # create + ingest
         }
     }
 
@@ -354,8 +354,8 @@ Describe "Invoke-SyncChinvex" -Tag "Task11" {
 
             $result = Invoke-SyncChinvex -Reconcile -StrapRootPath $script:testStrapRoot -OutputMode 'Object'
 
-            $result.Success | Should Be $false
-            $result.Error | Should Match "Chinvex not available"
+            $result.Success | Should -Be $false
+            $result.Error | Should -Match "Chinvex not available"
         }
     }
 }

@@ -99,16 +99,16 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
             Invoke-Move -NameToMove "moverepo" -DestPath $script:destDir -NonInteractive -StrapRootPath $script:testStrapRoot
 
             # Should call ingest with new path, then remove-repo with old path
-            $script:chinvexCalls.Count | Should Be 2
+            $script:chinvexCalls.Count | Should -Be 2
 
             # First call: add new path
             $ingestCall = $script:chinvexCalls | Where-Object { $_[0] -eq "ingest" }
-            $ingestCall | Should Not Be $null
-            $ingestCall -contains "--register-only" | Should Be $true
+            $ingestCall | Should -Not -Be $null
+            $ingestCall -contains "--register-only" | Should -Be $true
 
             # Second call: remove old path
             $removeCall = $script:chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "remove-repo" }
-            $removeCall | Should Not Be $null
+            $removeCall | Should -Not -Be $null
         }
 
         It "should keep same chinvex_context when scope unchanged" {
@@ -119,8 +119,8 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "moverepo" }
-            $entry.chinvex_context | Should Be "moverepo"
-            $entry.scope | Should Be "software"
+            $entry.chinvex_context | Should -Be "moverepo"
+            $entry.scope | Should -Be "software"
         }
     }
 
@@ -162,7 +162,7 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "scopechange" }
-            $entry.scope | Should Be "tool"
+            $entry.scope | Should -Be "tool"
         }
 
         It "should update chinvex_context to 'tools' when scope changes to tool" {
@@ -173,7 +173,7 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "scopechange" }
-            $entry.chinvex_context | Should Be "tools"
+            $entry.chinvex_context | Should -Be "tools"
         }
 
         It "should archive old context and create tools context on scope change" {
@@ -190,10 +190,10 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
 
             # Should: create tools context, add to tools, archive old context
             $createCall = $script:chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "create" -and $_[2] -eq "tools" }
-            $createCall | Should Not Be $null
+            $createCall | Should -Not -Be $null
 
             $archiveCall = $script:chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "archive" }
-            $archiveCall | Should Not Be $null
+            $archiveCall | Should -Not -Be $null
         }
     }
 
@@ -235,7 +235,7 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "toolrepo" }
-            $entry.scope | Should Be "software"
+            $entry.scope | Should -Be "software"
         }
 
         It "should update chinvex_context to repo name when scope changes to software" {
@@ -246,7 +246,7 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "toolrepo" }
-            $entry.chinvex_context | Should Be "toolrepo"
+            $entry.chinvex_context | Should -Be "toolrepo"
         }
 
         It "should remove from tools context and create individual context on scope change" {
@@ -263,10 +263,10 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
 
             # Should: create individual context, add to it, remove from tools
             $createCall = $script:chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "create" -and $_[2] -eq "toolrepo" }
-            $createCall | Should Not Be $null
+            $createCall | Should -Not -Be $null
 
             $removeCall = $script:chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "remove-repo" }
-            $removeCall | Should Not Be $null
+            $removeCall | Should -Not -Be $null
         }
     }
 
@@ -308,7 +308,7 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "failmove" }
-            $entry.chinvex_context | Should Be $null
+            $entry.chinvex_context | Should -Be $null
         }
 
         It "should still complete move even when chinvex fails" {
@@ -319,11 +319,11 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
 
             # Verify move completed
             $expectedPath = Join-Path $script:destDir "failmove"
-            Test-Path $expectedPath | Should Be $true
+            Test-Path $expectedPath | Should -Be $true
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "failmove" }
-            $entry.path | Should Be $expectedPath
+            $entry.path | Should -Be $expectedPath
         }
     }
 
@@ -364,7 +364,7 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
             Invoke-Move -NameToMove "nochxmove" -DestPath $script:destDir -NoChinvex -NonInteractive -StrapRootPath $script:testStrapRoot
 
             # Chinvex should not have been called
-            Assert-MockCalled Invoke-Chinvex -Times 0
+            Should -Invoke Invoke-Chinvex -Times 0
         }
 
         It "should preserve existing chinvex_context when --no-chinvex is used" {
@@ -375,7 +375,7 @@ Describe "Invoke-Move Chinvex Integration" -Tag "Task7" {
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "nochxmove" }
             # Context preserved (but may be stale - that's expected with --no-chinvex)
-            $entry.chinvex_context | Should Be "nochxmove"
+            $entry.chinvex_context | Should -Be "nochxmove"
         }
     }
 }

@@ -60,9 +60,9 @@ Describe "Invoke-Audit" {
         $result = Invoke-Audit -TargetName $targetName -StrapRootPath $strapRoot -OutputJson $outputJson
 
         # Assert
-        $result | Should Not BeNullOrEmpty
-        $result.references | Should Not BeNullOrEmpty
-        $result.references.Count | Should BeGreaterThan 0
+        $result | Should -Not -BeNullOrEmpty
+        $result.references | Should -Not -BeNullOrEmpty
+        $result.references.Count | Should -BeGreaterThan 0
     }
 
     It "should scan all repositories when --all flag is used" {
@@ -75,8 +75,8 @@ Describe "Invoke-Audit" {
         $result = Invoke-Audit -AllRepos $allFlag -StrapRootPath $strapRoot -OutputJson $outputJson
 
         # Assert
-        $result | Should Not BeNullOrEmpty
-        $result.Count | Should BeGreaterThan 0
+        $result | Should -Not -BeNullOrEmpty
+        $result.Count | Should -BeGreaterThan 0
     }
 
     It "should build and cache audit index" {
@@ -90,7 +90,7 @@ Describe "Invoke-Audit" {
         Invoke-Audit -TargetName $targetName -StrapRootPath $strapRoot -RebuildIndex $rebuildIndex -OutputJson $false
 
         # Assert
-        Test-Path $indexPath | Should Be $true
+        Test-Path $indexPath | Should -Be $true
     }
 
     It "should force rebuild when --rebuild-index flag is used" {
@@ -111,7 +111,7 @@ Describe "Invoke-Audit" {
 
         # Assert
         $secondIndex = Get-Content $indexPath | ConvertFrom-Json
-        $secondIndex.built_at | Should Not Be $firstBuiltAt
+        $secondIndex.built_at | Should -Not -Be $firstBuiltAt
     }
 
     It "should output JSON when --json flag is used" {
@@ -124,9 +124,9 @@ Describe "Invoke-Audit" {
         $result = Invoke-Audit -TargetName $targetName -StrapRootPath $strapRoot -OutputJson $outputJson
 
         # Assert
-        $result | Should Not BeNullOrEmpty
-        $result.PSObject.Properties.Name -contains "repository" | Should Be $true
-        $result.PSObject.Properties.Name -contains "references" | Should Be $true
+        $result | Should -Not -BeNullOrEmpty
+        $result.PSObject.Properties.Name -contains "repository" | Should -Be $true
+        $result.PSObject.Properties.Name -contains "references" | Should -Be $true
     }
 
     It "should filter by --tool or --software scope" {
@@ -152,8 +152,8 @@ Describe "Invoke-Audit" {
         $result = Invoke-Audit -AllRepos $true -ToolScope $true -StrapRootPath $strapRoot -OutputJson $false
 
         # Assert
-        $result | Should Not BeNullOrEmpty
-        $result.Count | Should Be 1
-        $result[0].repository | Should Be "tooltool"
+        $result | Should -Not -BeNullOrEmpty
+        $result.Count | Should -Be 1
+        $result[0].repository | Should -Be "tooltool"
     }
 }

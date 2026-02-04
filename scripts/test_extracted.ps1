@@ -1,5 +1,18 @@
 Set-Location 'P:\software\_strap'
-$r1 = Invoke-Pester -Path tests\powershell\ChinvexContexts.Tests.ps1 -PassThru -Quiet
-$r2 = Invoke-Pester -Path tests\powershell\Get-PathProfileReferences.Tests.ps1 -PassThru -Quiet
-Write-Host "ChinvexContexts: $($r1.PassedCount)/$($r1.TotalCount)"
-Write-Host "Get-PathProfileReferences: $($r2.PassedCount)/$($r2.TotalCount)"
+
+$config1 = New-PesterConfiguration
+$config1.Run.Path = 'tests\powershell\ChinvexContexts.Tests.ps1'
+$config1.Run.PassThru = $true
+$config1.Output.Verbosity = 'Minimal'
+
+$r1 = Invoke-Pester -Configuration $config1
+
+$config2 = New-PesterConfiguration
+$config2.Run.Path = 'tests\powershell\Get-PathProfileReferences.Tests.ps1'
+$config2.Run.PassThru = $true
+$config2.Output.Verbosity = 'Minimal'
+
+$r2 = Invoke-Pester -Configuration $config2
+
+Write-Host "ChinvexContexts: $($r1.Passed.Count)/$($r1.TotalCount)"
+Write-Host "Get-PathProfileReferences: $($r2.Passed.Count)/$($r2.TotalCount)"

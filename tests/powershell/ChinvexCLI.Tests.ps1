@@ -27,50 +27,50 @@ Describe "CLI Dispatch Wiring for Chinvex Flags" -Tag "Task6" {
             $args = @("clone", "https://github.com/user/repo", "--no-chinvex")
             $result = Parse-GlobalFlags $args
 
-            $result.NoChinvex | Should Be $true
-            $result.RemainingArgs -contains "--no-chinvex" | Should Be $false
+            $result.NoChinvex | Should -Be $true
+            $result.RemainingArgs -contains "--no-chinvex" | Should -Be $false
         }
 
         It "should extract --tool flag from arguments" {
             $args = @("clone", "https://github.com/user/repo", "--tool")
             $result = Parse-GlobalFlags $args
 
-            $result.IsTool | Should Be $true
-            $result.RemainingArgs -contains "--tool" | Should Be $false
+            $result.IsTool | Should -Be $true
+            $result.RemainingArgs -contains "--tool" | Should -Be $false
         }
 
         It "should extract --software flag from arguments" {
             $args = @("adopt", "--path", "P:\software\repo", "--software")
             $result = Parse-GlobalFlags $args
 
-            $result.IsSoftware | Should Be $true
-            $result.RemainingArgs -contains "--software" | Should Be $false
+            $result.IsSoftware | Should -Be $true
+            $result.RemainingArgs -contains "--software" | Should -Be $false
         }
 
         It "should preserve other arguments" {
             $args = @("clone", "https://github.com/user/repo", "--no-chinvex", "--name", "myrepo")
             $result = Parse-GlobalFlags $args
 
-            $result.NoChinvex | Should Be $true
-            $result.RemainingArgs -contains "--name" | Should Be $true
-            $result.RemainingArgs -contains "myrepo" | Should Be $true
+            $result.NoChinvex | Should -Be $true
+            $result.RemainingArgs -contains "--name" | Should -Be $true
+            $result.RemainingArgs -contains "myrepo" | Should -Be $true
         }
 
         It "should handle multiple chinvex flags" {
             $args = @("clone", "https://github.com/user/repo", "--tool", "--no-chinvex")
             $result = Parse-GlobalFlags $args
 
-            $result.NoChinvex | Should Be $true
-            $result.IsTool | Should Be $true
+            $result.NoChinvex | Should -Be $true
+            $result.IsTool | Should -Be $true
         }
 
         It "should return false for flags not present" {
             $args = @("clone", "https://github.com/user/repo")
             $result = Parse-GlobalFlags $args
 
-            $result.NoChinvex | Should Be $false
-            $result.IsTool | Should Be $false
-            $result.IsSoftware | Should Be $false
+            $result.NoChinvex | Should -Be $false
+            $result.IsTool | Should -Be $false
+            $result.IsSoftware | Should -Be $false
         }
     }
 
@@ -111,7 +111,7 @@ Describe "CLI Dispatch Wiring for Chinvex Flags" -Tag "Task6" {
 
             # Verify scope exists
             $entry = $entries | Where-Object { $_.name -eq "testrepo" }
-            $entry.scope | Should Be "software"
+            $entry.scope | Should -Be "software"
 
             # Re-save
             $registry | ConvertTo-Json -Depth 10 | Set-Content $script:testRegistryPath
@@ -119,19 +119,19 @@ Describe "CLI Dispatch Wiring for Chinvex Flags" -Tag "Task6" {
             # Re-load and verify
             $reloaded = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $reloadedEntry = $reloaded.entries | Where-Object { $_.name -eq "testrepo" }
-            $reloadedEntry.scope | Should Be "software"
+            $reloadedEntry.scope | Should -Be "software"
         }
 
         It "should preserve chinvex_context field on registry load/save" {
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "testrepo" }
-            $entry.chinvex_context | Should Be "testrepo"
+            $entry.chinvex_context | Should -Be "testrepo"
 
             # Re-save and reload
             $registry | ConvertTo-Json -Depth 10 | Set-Content $script:testRegistryPath
             $reloaded = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $reloadedEntry = $reloaded.entries | Where-Object { $_.name -eq "testrepo" }
-            $reloadedEntry.chinvex_context | Should Be "testrepo"
+            $reloadedEntry.chinvex_context | Should -Be "testrepo"
         }
 
         It "should preserve null chinvex_context value" {
@@ -144,7 +144,7 @@ Describe "CLI Dispatch Wiring for Chinvex Flags" -Tag "Task6" {
             # Re-load and verify null is preserved
             $reloaded = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $reloadedEntry = $reloaded.entries | Where-Object { $_.name -eq "testrepo" }
-            $reloadedEntry.chinvex_context | Should Be $null
+            $reloadedEntry.chinvex_context | Should -Be $null
         }
     }
 }

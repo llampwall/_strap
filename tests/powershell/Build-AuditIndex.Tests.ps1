@@ -52,11 +52,11 @@ No paths in this file.
         $result = Find-PathReferences -RepoPath $repoPath
 
         # Assert
-        $result | Should Not BeNullOrEmpty
-        $result.Count | Should BeGreaterThan 2  # At least 3 path references (script.ps1 has 2, config.json has 2)
+        $result | Should -Not -BeNullOrEmpty
+        $result.Count | Should -BeGreaterThan 2  # At least 3 path references (script.ps1 has 2, config.json has 2)
 
         # Verify line number format: filepath:linenum
-        $result[0] | Should Match ":\d+$"
+        $result[0] | Should -Match ":\d+$"
     }
 
     It "should scan common file types (ps1, json, yml, md, etc.)" {
@@ -70,8 +70,8 @@ No paths in this file.
         $psFiles = $result | Where-Object { $_ -like "*.ps1:*" }
         $jsonFiles = $result | Where-Object { $_ -like "*.json:*" }
 
-        $psFiles | Should Not BeNullOrEmpty
-        $jsonFiles | Should Not BeNullOrEmpty
+        $psFiles | Should -Not -BeNullOrEmpty
+        $jsonFiles | Should -Not -BeNullOrEmpty
     }
 
     It "should return empty array for repo with no path references" {
@@ -84,7 +84,7 @@ No paths in this file.
         $result = Find-PathReferences -RepoPath $cleanRepo
 
         # Assert
-        $result | Should BeNullOrEmpty
+        $result | Should -BeNullOrEmpty
     }
 
     It "should handle non-existent repository gracefully" {
@@ -95,7 +95,7 @@ No paths in this file.
         $result = Find-PathReferences -RepoPath $nonExistentRepo
 
         # Assert
-        $result | Should BeNullOrEmpty
+        $result | Should -BeNullOrEmpty
     }
 }
 
@@ -144,14 +144,14 @@ Describe "Build-AuditIndex" {
             -RegistryUpdatedAt $registryUpdatedAt -Registry $script:testRegistry
 
         # Assert
-        $result | Should Not BeNullOrEmpty
-        $result.built_at | Should Not BeNullOrEmpty
-        $result.registry_updated_at | Should Be $registryUpdatedAt
-        $result.repo_count | Should Be 2
-        $result.repos.Keys.Count | Should Be 2
+        $result | Should -Not -BeNullOrEmpty
+        $result.built_at | Should -Not -BeNullOrEmpty
+        $result.registry_updated_at | Should -Be $registryUpdatedAt
+        $result.repo_count | Should -Be 2
+        $result.repos.Keys.Count | Should -Be 2
 
         # Verify index was written to disk
-        Test-Path $indexPath | Should Be $true
+        Test-Path $indexPath | Should -Be $true
     }
 
     It "should include references array for each repository" {
@@ -165,9 +165,9 @@ Describe "Build-AuditIndex" {
 
         # Assert
         $chinvexEntry = $result.repos["C:\Code\chinvex"]
-        $chinvexEntry | Should Not BeNullOrEmpty
-        $chinvexEntry.references | Should Not BeNullOrEmpty
-        $chinvexEntry.references.Count | Should BeGreaterThan 0
+        $chinvexEntry | Should -Not -BeNullOrEmpty
+        $chinvexEntry.references | Should -Not -BeNullOrEmpty
+        $chinvexEntry.references.Count | Should -BeGreaterThan 0
     }
 
     It "should reuse existing index when metadata is fresh" {
@@ -188,7 +188,7 @@ Describe "Build-AuditIndex" {
             -RegistryUpdatedAt $registryUpdatedAt -Registry $script:testRegistry
 
         # Assert - should be cached (same built_at timestamp)
-        $secondResult.built_at | Should Be $firstBuiltAt
+        $secondResult.built_at | Should -Be $firstBuiltAt
     }
 
     It "should force rebuild when -RebuildIndex is true" {
@@ -209,7 +209,7 @@ Describe "Build-AuditIndex" {
             -RegistryUpdatedAt $registryUpdatedAt -Registry $script:testRegistry
 
         # Assert - should be rebuilt (different built_at timestamp)
-        $secondResult.built_at | Should Not Be $firstBuiltAt
+        $secondResult.built_at | Should -Not -Be $firstBuiltAt
     }
 
     It "should rebuild when registry_updated_at changes" {
@@ -227,7 +227,7 @@ Describe "Build-AuditIndex" {
             -RegistryUpdatedAt $newRegistryUpdatedAt -Registry $script:testRegistry
 
         # Assert - should be rebuilt
-        $result.registry_updated_at | Should Be $newRegistryUpdatedAt
+        $result.registry_updated_at | Should -Be $newRegistryUpdatedAt
     }
 
     It "should rebuild when repo count changes" {
@@ -253,7 +253,7 @@ Describe "Build-AuditIndex" {
             -RegistryUpdatedAt $registryUpdatedAt -Registry $expandedRegistry
 
         # Assert - should be rebuilt
-        $result.repo_count | Should Be 3
+        $result.repo_count | Should -Be 3
 
         # Clean up
         Remove-Item -Path "C:\Code\newrepo" -Recurse -Force -ErrorAction SilentlyContinue

@@ -73,7 +73,7 @@ Describe "Invoke-Adopt Chinvex Integration" -Tag "Task5" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "autosoftware" }
-            $entry.scope | Should Be "software"
+            $entry.scope | Should -Be "software"
         }
 
         It "should auto-detect 'tool' scope for repo under tools_root" {
@@ -88,7 +88,7 @@ Describe "Invoke-Adopt Chinvex Integration" -Tag "Task5" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "autotool" }
-            $entry.scope | Should Be "tool"
+            $entry.scope | Should -Be "tool"
         }
     }
 
@@ -105,7 +105,7 @@ Describe "Invoke-Adopt Chinvex Integration" -Tag "Task5" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "forcedtool" }
-            $entry.scope | Should Be "tool"
+            $entry.scope | Should -Be "tool"
         }
 
         It "should use 'software' scope when --software flag provided" {
@@ -120,7 +120,7 @@ Describe "Invoke-Adopt Chinvex Integration" -Tag "Task5" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "forcedsoftware" }
-            $entry.scope | Should Be "software"
+            $entry.scope | Should -Be "software"
         }
     }
 
@@ -137,7 +137,7 @@ Describe "Invoke-Adopt Chinvex Integration" -Tag "Task5" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "softwarectx" }
-            $entry.chinvex_context | Should Be "softwarectx"
+            $entry.chinvex_context | Should -Be "softwarectx"
         }
 
         It "should set chinvex_context to 'tools' for tool scope" {
@@ -152,7 +152,7 @@ Describe "Invoke-Adopt Chinvex Integration" -Tag "Task5" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "toolctx" }
-            $entry.chinvex_context | Should Be "tools"
+            $entry.chinvex_context | Should -Be "tools"
         }
 
         It "should set chinvex_context to null when --no-chinvex flag used" {
@@ -165,7 +165,7 @@ Describe "Invoke-Adopt Chinvex Integration" -Tag "Task5" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "nochxadopt" }
-            $entry.chinvex_context | Should Be $null
+            $entry.chinvex_context | Should -Be $null
         }
 
         It "should set chinvex_context to null when chinvex unavailable" {
@@ -179,7 +179,7 @@ Describe "Invoke-Adopt Chinvex Integration" -Tag "Task5" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "unavailchx" }
-            $entry.chinvex_context | Should Be $null
+            $entry.chinvex_context | Should -Be $null
         }
     }
 
@@ -190,8 +190,7 @@ Describe "Invoke-Adopt Chinvex Integration" -Tag "Task5" {
 
             Mock git { $global:LASTEXITCODE = 0 }
 
-            { Invoke-Adopt -TargetPath $repoPath -NonInteractive -StrapRootPath $script:testStrapRoot } |
-                Should Throw
+            { Invoke-Adopt -TargetPath $repoPath -NonInteractive -StrapRootPath $script:testStrapRoot } | Should -Throw
         }
 
         It "should reject 'archive' as software repo name" {
@@ -200,8 +199,7 @@ Describe "Invoke-Adopt Chinvex Integration" -Tag "Task5" {
 
             Mock git { $global:LASTEXITCODE = 0 }
 
-            { Invoke-Adopt -TargetPath $repoPath -NonInteractive -StrapRootPath $script:testStrapRoot } |
-                Should Throw
+            { Invoke-Adopt -TargetPath $repoPath -NonInteractive -StrapRootPath $script:testStrapRoot } | Should -Throw
         }
 
         It "should allow adopting repo named 'tools' as tool scope" {
@@ -212,8 +210,7 @@ Describe "Invoke-Adopt Chinvex Integration" -Tag "Task5" {
             Mock Invoke-Chinvex { return $true }
             Mock git { $global:LASTEXITCODE = 0 }
 
-            { Invoke-Adopt -TargetPath $repoPath -ForceTool -NonInteractive -StrapRootPath $script:testStrapRoot } |
-                Should Not Throw
+            { Invoke-Adopt -TargetPath $repoPath -ForceTool -NonInteractive -StrapRootPath $script:testStrapRoot } | Should -Not -Throw
         }
     }
 }

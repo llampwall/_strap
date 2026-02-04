@@ -1,3 +1,9 @@
 Set-Location 'P:\software\_strap'
-$r = Invoke-Pester -Path tests\powershell\ChinvexClone.Tests.ps1 -PassThru -Quiet
-Write-Host "Passed: $($r.PassedCount) / $($r.TotalCount)"
+
+$config = New-PesterConfiguration
+$config.Run.Path = 'tests\powershell\ChinvexClone.Tests.ps1'
+$config.Run.PassThru = $true
+$config.Output.Verbosity = 'Minimal'
+
+$r = Invoke-Pester -Configuration $config
+Write-Host "Passed: $($r.Passed.Count) / $($r.TotalCount)"

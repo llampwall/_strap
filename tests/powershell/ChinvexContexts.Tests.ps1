@@ -101,8 +101,8 @@ Describe "Invoke-Contexts Command" -Tag "Task10" {
 
             $result = Invoke-Contexts -StrapRootPath $script:testStrapRoot -OutputMode "Object"
 
-            $result | Should Not Be $null
-            ($result.Count -gt 0) | Should Be $true
+            $result | Should -Not -Be $null
+            ($result.Count -gt 0) | Should -Be $true
         }
 
         It "should identify synced contexts" {
@@ -116,8 +116,8 @@ Describe "Invoke-Contexts Command" -Tag "Task10" {
             $result = Invoke-Contexts -StrapRootPath $script:testStrapRoot -OutputMode "Object"
 
             $syncedEntry = $result | Where-Object { $_.Name -eq "project1" }
-            $syncedEntry | Should Not Be $null
-            $syncedEntry.SyncStatus | Should Be "synced"
+            $syncedEntry | Should -Not -Be $null
+            $syncedEntry.SyncStatus | Should -Be "synced"
         }
 
         It "should identify unsynced contexts" {
@@ -131,8 +131,8 @@ Describe "Invoke-Contexts Command" -Tag "Task10" {
             $result = Invoke-Contexts -StrapRootPath $script:testStrapRoot -OutputMode "Object"
 
             $unsyncedEntry = $result | Where-Object { $_.Name -eq "unsynced" }
-            $unsyncedEntry | Should Not Be $null
-            $unsyncedEntry.SyncStatus | Should Be "not synced"
+            $unsyncedEntry | Should -Not -Be $null
+            $unsyncedEntry.SyncStatus | Should -Be "not synced"
         }
 
         It "should identify orphaned chinvex contexts" {
@@ -147,8 +147,8 @@ Describe "Invoke-Contexts Command" -Tag "Task10" {
             $result = Invoke-Contexts -StrapRootPath $script:testStrapRoot -OutputMode "Object"
 
             $orphanEntry = $result | Where-Object { $_.Name -eq "orphan-context" }
-            $orphanEntry | Should Not Be $null
-            $orphanEntry.SyncStatus | Should Be "no strap entry"
+            $orphanEntry | Should -Not -Be $null
+            $orphanEntry.SyncStatus | Should -Be "no strap entry"
         }
     }
 
@@ -180,12 +180,12 @@ Describe "Invoke-Contexts Command" -Tag "Task10" {
             $result = Invoke-Contexts -StrapRootPath $script:testStrapRoot -OutputMode "Object"
 
             # Should still return registry entries
-            $result | Should Not Be $null
-            ($result.Count -gt 0) | Should Be $true
+            $result | Should -Not -Be $null
+            ($result.Count -gt 0) | Should -Be $true
 
             # Entry should show unknown sync status since chinvex unavailable
             $entry = $result | Where-Object { $_.Name -eq "project1" }
-            $entry.SyncStatus | Should Be "unknown (chinvex unavailable)"
+            $entry.SyncStatus | Should -Be "unknown (chinvex unavailable)"
         }
     }
 
@@ -231,9 +231,9 @@ Describe "Invoke-Contexts Command" -Tag "Task10" {
             $result = Invoke-Contexts -StrapRootPath $script:testStrapRoot -OutputMode "Object"
 
             $toolsEntry = $result | Where-Object { $_.Name -eq "tools" }
-            $toolsEntry | Should Not Be $null
-            $toolsEntry.Type | Should Be "tool"
-            ($toolsEntry.RepoCount -eq 2) | Should Be $true
+            $toolsEntry | Should -Not -Be $null
+            $toolsEntry.Type | Should -Be "tool"
+            ($toolsEntry.RepoCount -eq 2) | Should -Be $true
         }
     }
 
@@ -269,10 +269,10 @@ Describe "Invoke-Contexts Command" -Tag "Task10" {
             $result = Invoke-Contexts -StrapRootPath $script:testStrapRoot -OutputMode "Object"
 
             $entry = $result | Select-Object -First 1
-            ($entry.PSObject.Properties.Name -contains "Name") | Should Be $true
-            ($entry.PSObject.Properties.Name -contains "Type") | Should Be $true
-            ($entry.PSObject.Properties.Name -contains "RepoCount") | Should Be $true
-            ($entry.PSObject.Properties.Name -contains "SyncStatus") | Should Be $true
+            ($entry.PSObject.Properties.Name -contains "Name") | Should -Be $true
+            ($entry.PSObject.Properties.Name -contains "Type") | Should -Be $true
+            ($entry.PSObject.Properties.Name -contains "RepoCount") | Should -Be $true
+            ($entry.PSObject.Properties.Name -contains "SyncStatus") | Should -Be $true
         }
     }
 }

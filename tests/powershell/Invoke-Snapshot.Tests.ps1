@@ -64,9 +64,9 @@ Describe "Invoke-Snapshot" {
         $result = Invoke-Snapshot -ScanDirs $scanDirs -OutputPath $outputPath -StrapRootPath $strapRoot
 
         # Assert
-        $result | Should Not BeNullOrEmpty
-        $result.discovered | Should Not BeNullOrEmpty
-        $result.discovered.Count | Should Be 3  # repo, dir, file
+        $result | Should -Not -BeNullOrEmpty
+        $result.discovered | Should -Not -BeNullOrEmpty
+        $result.discovered.Count | Should -Be 3  # repo, dir, file
     }
 
     It "should detect git repositories with metadata" {
@@ -80,14 +80,14 @@ Describe "Invoke-Snapshot" {
 
         # Assert
         # Should have discovered some items
-        $result.discovered | Should Not BeNullOrEmpty
-        $result.discovered.Count | Should BeGreaterThan 0
+        $result.discovered | Should -Not -BeNullOrEmpty
+        $result.discovered.Count | Should -BeGreaterThan 0
 
         # Should detect at least one item named testproject
         $testprojectItem = $result.discovered | Where-Object { $_.name -eq "testproject" }
-        $testprojectItem | Should Not BeNullOrEmpty
+        $testprojectItem | Should -Not -BeNullOrEmpty
         # It should be detected as a git repo (has .git subdirectory)
-        $testprojectItem.type | Should Be "git"
+        $testprojectItem.type | Should -Be "git"
     }
 
     It "should write snapshot manifest to output file" {
@@ -100,12 +100,12 @@ Describe "Invoke-Snapshot" {
         Invoke-Snapshot -ScanDirs $scanDirs -OutputPath $outputPath -StrapRootPath $strapRoot
 
         # Assert
-        Test-Path $outputPath | Should Be $true
+        Test-Path $outputPath | Should -Be $true
 
         $content = Get-Content $outputPath -Raw | ConvertFrom-Json
-        $content.timestamp | Should Not BeNullOrEmpty
-        $content.discovered | Should Not BeNullOrEmpty
-        $content.registry | Should Not BeNullOrEmpty
+        $content.timestamp | Should -Not -BeNullOrEmpty
+        $content.discovered | Should -Not -BeNullOrEmpty
+        $content.registry | Should -Not -BeNullOrEmpty
     }
 
     It "should include registry snapshot and external references" {
@@ -126,12 +126,12 @@ Describe "Invoke-Snapshot" {
         $result = Invoke-Snapshot -ScanDirs $scanDirs -OutputPath $outputPath -StrapRootPath $strapRoot
 
         # Assert
-        $result.registry | Should Not BeNullOrEmpty
-        $result.registry.version | Should Be 2
-        $result.external_refs | Should Not BeNullOrEmpty
+        $result.registry | Should -Not -BeNullOrEmpty
+        $result.registry.version | Should -Be 2
+        $result.external_refs | Should -Not -BeNullOrEmpty
         # Check that external_refs has the expected properties (arrays, may be empty)
-        $result.external_refs.pm2.GetType().Name | Should Match "Object"
-        $result.external_refs.scheduled_tasks.GetType().Name | Should Match "Object"
+        $result.external_refs.pm2.GetType().Name | Should -Match "Object"
+        $result.external_refs.scheduled_tasks.GetType().Name | Should -Match "Object"
     }
 
     It "should default to standard scan directories when none specified" {
@@ -143,6 +143,6 @@ Describe "Invoke-Snapshot" {
         $result = Invoke-Snapshot -ScanDirs @() -OutputPath $outputPath -StrapRootPath $strapRoot
 
         # Assert - should use default dirs (C:\Code, P:\software, etc.)
-        $result | Should Not BeNullOrEmpty
+        $result | Should -Not -BeNullOrEmpty
     }
 }

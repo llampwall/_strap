@@ -69,8 +69,8 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
             $result1 = Sync-ChinvexForEntry -Scope "software" -Name "idempotent-repo" -RepoPath "P:\software\idempotent-repo"
             $result2 = Sync-ChinvexForEntry -Scope "software" -Name "idempotent-repo" -RepoPath "P:\software\idempotent-repo"
 
-            $result1 | Should Be "idempotent-repo"
-            $result2 | Should Be "idempotent-repo"
+            $result1 | Should -Be "idempotent-repo"
+            $result2 | Should -Be "idempotent-repo"
         }
 
         It "should use --idempotent flag on context create" {
@@ -87,25 +87,25 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
 
             Sync-ChinvexForEntry -Scope "software" -Name "test-repo" -RepoPath "P:\software\test-repo"
 
-            $script:createCalls.Count | Should Be 1
-            ($script:createCalls[0] -contains "--idempotent") | Should Be $true
+            $script:createCalls.Count | Should -Be 1
+            ($script:createCalls[0] -contains "--idempotent") | Should -Be $true
         }
     }
 
     Context "Reserved name rejection" {
         It "should reject 'tools' as software repo name in Test-ReservedContextName" {
             $result = Test-ReservedContextName -Name "tools" -Scope "software"
-            $result | Should Be $true
+            $result | Should -Be $true
         }
 
         It "should reject 'archive' as software repo name in Test-ReservedContextName" {
             $result = Test-ReservedContextName -Name "archive" -Scope "software"
-            $result | Should Be $true
+            $result | Should -Be $true
         }
 
         It "should allow 'tools' as tool repo name (goes to shared context)" {
             $result = Test-ReservedContextName -Name "tools" -Scope "tool"
-            $result | Should Be $false
+            $result | Should -Be $false
         }
 
         It "should be case-insensitive for reserved name check" {
@@ -113,9 +113,9 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
             $result2 = Test-ReservedContextName -Name "Tools" -Scope "software"
             $result3 = Test-ReservedContextName -Name "ARCHIVE" -Scope "software"
 
-            $result1 | Should Be $true
-            $result2 | Should Be $true
-            $result3 | Should Be $true
+            $result1 | Should -Be $true
+            $result2 | Should -Be $true
+            $result3 | Should -Be $true
         }
     }
 
@@ -126,17 +126,17 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
 
         It "should return null from Sync-ChinvexForEntry when chinvex unavailable" {
             $result = Sync-ChinvexForEntry -Scope "software" -Name "test" -RepoPath "P:\software\test"
-            $result | Should Be $null
+            $result | Should -Be $null
         }
 
         It "should return false from Invoke-Chinvex when chinvex unavailable" {
             $result = Invoke-Chinvex -Arguments @("context", "list")
-            $result | Should Be $false
+            $result | Should -Be $false
         }
 
         It "should return null from Invoke-ChinvexQuery when chinvex unavailable" {
             $result = Invoke-ChinvexQuery -Arguments @("context", "list", "--json")
-            $result | Should Be $null
+            $result | Should -Be $null
         }
 
         It "should cache chinvex availability check" {
@@ -149,7 +149,7 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
             Test-ChinvexAvailable
 
             # Should only call Get-Command once
-            Assert-MockCalled Get-Command -Times 1 -ParameterFilter { $Name -eq "chinvex" }
+            Should -Invoke Get-Command -Times 1 -ParameterFilter { $Name -eq "chinvex" }
         }
     }
 
@@ -164,7 +164,7 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
 
             $result = Sync-ChinvexForEntry -Scope "software" -Name "failure-test" -RepoPath (Join-Path $script:testSoftwareRoot "failure-test")
 
-            $result | Should Be $null
+            $result | Should -Be $null
         }
 
         It "should set chinvex_context to null when ingest fails after create succeeds" {
@@ -179,7 +179,7 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
 
             $result = Sync-ChinvexForEntry -Scope "software" -Name "failure-test" -RepoPath (Join-Path $script:testSoftwareRoot "failure-test")
 
-            $result | Should Be $null
+            $result | Should -Be $null
         }
     }
 
@@ -193,7 +193,7 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
 
             foreach ($path in $paths) {
                 $scope = Detect-RepoScope -Path $path -StrapRootPath $script:testStrapRoot
-                $scope | Should Be "tool"
+                $scope | Should -Be "tool"
             }
         }
 
@@ -206,7 +206,7 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
 
             foreach ($path in $paths) {
                 $scope = Detect-RepoScope -Path $path -StrapRootPath $script:testStrapRoot
-                $scope | Should Be "software"
+                $scope | Should -Be "software"
             }
         }
 
@@ -220,7 +220,7 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
             foreach ($path in $paths) {
                 $scope = Detect-RepoScope -Path $path -StrapRootPath $script:testStrapRoot
                 $result = ($scope -eq $null)
-                $result | Should Be $true
+                $result | Should -Be $true
             }
         }
 
@@ -228,7 +228,7 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
             # tools_root is inside software_root, so tools_root should match first
             $toolPath = Join-Path $script:testToolsRoot "sometool"
             $scope = Detect-RepoScope -Path $toolPath -StrapRootPath $script:testStrapRoot
-            $scope | Should Be "tool"
+            $scope | Should -Be "tool"
         }
     }
 
@@ -238,7 +238,7 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
 
             foreach ($name in $names) {
                 $context = Get-ContextName -Scope "tool" -Name $name
-                $context | Should Be "tools"
+                $context | Should -Be "tools"
             }
         }
 
@@ -247,7 +247,7 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
 
             foreach ($name in $names) {
                 $context = Get-ContextName -Scope "software" -Name $name
-                $context | Should Be $name
+                $context | Should -Be $name
             }
         }
     }
@@ -256,13 +256,13 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
         It "should include 'tools' in default whitelist" {
             $config = Load-Config $script:testStrapRoot
             $defaultWhitelist = @("tools", "archive")
-            ($defaultWhitelist -contains "tools") | Should Be $true
+            ($defaultWhitelist -contains "tools") | Should -Be $true
         }
 
         It "should include 'archive' in default whitelist" {
             $config = Load-Config $script:testStrapRoot
             $defaultWhitelist = @("tools", "archive")
-            ($defaultWhitelist -contains "archive") | Should Be $true
+            ($defaultWhitelist -contains "archive") | Should -Be $true
         }
 
         It "should merge user whitelist with defaults" {
@@ -281,8 +281,8 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
             } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $script:testStrapRoot "config.json")
 
             $config = Load-Config $script:testStrapRoot
-            ($config.chinvex_whitelist -contains "custom-context") | Should Be $true
-            ($config.chinvex_whitelist -contains "another-special") | Should Be $true
+            ($config.chinvex_whitelist -contains "custom-context") | Should -Be $true
+            ($config.chinvex_whitelist -contains "another-special") | Should -Be $true
         }
     }
 
@@ -291,7 +291,7 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
             Mock Get-Command { return @{ Name = "chinvex" } } -ParameterFilter { $Name -eq "chinvex" }
 
             $result = Test-ChinvexEnabled -NoChinvex -StrapRootPath $script:testStrapRoot
-            $result | Should Be $false
+            $result | Should -Be $false
         }
 
         It "should return false when config disables integration" {
@@ -311,7 +311,7 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
             Mock Get-Command { return @{ Name = "chinvex" } } -ParameterFilter { $Name -eq "chinvex" }
 
             $result = Test-ChinvexEnabled -StrapRootPath $script:testStrapRoot
-            $result | Should Be $false
+            $result | Should -Be $false
         }
 
         It "should return true when enabled in config and chinvex available" {
@@ -322,7 +322,7 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
             $script:chinvexAvailable = $false
 
             $result = Test-ChinvexEnabled -StrapRootPath $script:testStrapRoot
-            $result | Should Be $true
+            $result | Should -Be $true
         }
 
         It "should return false when enabled but chinvex not available" {
@@ -333,7 +333,7 @@ Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
             $script:chinvexAvailable = $false
 
             $result = Test-ChinvexEnabled -StrapRootPath $script:testStrapRoot
-            $result | Should Be $false
+            $result | Should -Be $false
         }
     }
 }

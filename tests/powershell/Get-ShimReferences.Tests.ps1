@@ -54,10 +54,10 @@ powershell -File "%TARGET%" %*
         $result = Get-ShimReferences -ShimDir $shimDir -RepoPaths $repoPaths
 
         # Assert
-        $result | Should Not BeNullOrEmpty
-        $result.Count | Should Be 1
-        $result[0].name | Should Be "chinvex"
-        $result[0].target | Should Match "C:\\Code\\chinvex"
+        $result | Should -Not -BeNullOrEmpty
+        $result.Count | Should -Be 1
+        $result[0].name | Should -Be "chinvex"
+        $result[0].target | Should -Match "C:\\Code\\chinvex"
     }
 
     It "should return empty array when no shims match repo paths" {
@@ -69,7 +69,7 @@ powershell -File "%TARGET%" %*
         $result = Get-ShimReferences -ShimDir $shimDir -RepoPaths $repoPaths
 
         # Assert
-        $result | Should BeNullOrEmpty
+        $result | Should -BeNullOrEmpty
     }
 
     It "should normalize paths and match case-insensitively" {
@@ -81,8 +81,8 @@ powershell -File "%TARGET%" %*
         $result = Get-ShimReferences -ShimDir $shimDir -RepoPaths $repoPaths
 
         # Assert
-        $result | Should Not BeNullOrEmpty
-        $result[0].name | Should Be "chinvex"
+        $result | Should -Not -BeNullOrEmpty
+        $result[0].name | Should -Be "chinvex"
     }
 
     It "should handle missing shim directory gracefully" {
@@ -94,7 +94,7 @@ powershell -File "%TARGET%" %*
         $result = Get-ShimReferences -ShimDir $shimDir -RepoPaths $repoPaths
 
         # Assert
-        $result | Should BeNullOrEmpty
+        $result | Should -BeNullOrEmpty
     }
 
     It "should only process .cmd files" {
@@ -109,6 +109,6 @@ powershell -File "%TARGET%" %*
 
         # Assert
         # Should only find chinvex.cmd, not test.txt
-        $result.Count | Should Be 1
+        $result.Count | Should -Be 1
     }
 }

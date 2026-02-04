@@ -91,10 +91,10 @@ Describe "Invoke-Rename Chinvex Integration" -Tag "Task8" {
 
             # Should call context rename
             $renameCall = $script:chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "rename" }
-            $renameCall | Should Not Be $null
-            $renameCall -contains "oldname" | Should Be $true
-            $renameCall -contains "--to" | Should Be $true
-            $renameCall -contains "newname" | Should Be $true
+            $renameCall | Should -Not -Be $null
+            $renameCall -contains "oldname" | Should -Be $true
+            $renameCall -contains "--to" | Should -Be $true
+            $renameCall -contains "newname" | Should -Be $true
         }
 
         It "should update chinvex_context field to new name" {
@@ -105,7 +105,7 @@ Describe "Invoke-Rename Chinvex Integration" -Tag "Task8" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "newname" }
-            $entry.chinvex_context | Should Be "newname"
+            $entry.chinvex_context | Should -Be "newname"
         }
     }
 
@@ -140,7 +140,7 @@ Describe "Invoke-Rename Chinvex Integration" -Tag "Task8" {
             Invoke-Rename -NameToRename "oldtool" -NewName "newtool" -NonInteractive -StrapRootPath $script:testStrapRoot
 
             # Should NOT invoke chinvex rename for tools
-            Assert-MockCalled Invoke-Chinvex -Times 0
+            Should -Invoke Invoke-Chinvex -Times 0
         }
 
         It "should keep chinvex_context as 'tools' for tool scope" {
@@ -151,7 +151,7 @@ Describe "Invoke-Rename Chinvex Integration" -Tag "Task8" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "newtool" }
-            $entry.chinvex_context | Should Be "tools"
+            $entry.chinvex_context | Should -Be "tools"
         }
     }
 
@@ -193,13 +193,13 @@ Describe "Invoke-Rename Chinvex Integration" -Tag "Task8" {
 
             # Should call: context rename, then ingest (add new path), then remove-repo (old path)
             $renameCall = $script:chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "rename" }
-            $renameCall | Should Not Be $null
+            $renameCall | Should -Not -Be $null
 
             $ingestCall = $script:chinvexCalls | Where-Object { $_[0] -eq "ingest" }
-            $ingestCall | Should Not Be $null
+            $ingestCall | Should -Not -Be $null
 
             $removeCall = $script:chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "remove-repo" }
-            $removeCall | Should Not Be $null
+            $removeCall | Should -Not -Be $null
         }
 
         It "should update registry path and chinvex_context" {
@@ -210,10 +210,10 @@ Describe "Invoke-Rename Chinvex Integration" -Tag "Task8" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "renamedwithmove" }
-            $entry.chinvex_context | Should Be "renamedwithmove"
+            $entry.chinvex_context | Should -Be "renamedwithmove"
 
             $expectedPath = Join-Path $script:testSoftwareRoot "renamedwithmove"
-            $entry.path | Should Be $expectedPath
+            $entry.path | Should -Be $expectedPath
         }
     }
 
@@ -249,7 +249,7 @@ Describe "Invoke-Rename Chinvex Integration" -Tag "Task8" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "newfailrename" }
-            $entry.chinvex_context | Should Be $null
+            $entry.chinvex_context | Should -Be $null
         }
 
         It "should still complete rename when chinvex fails" {
@@ -260,8 +260,8 @@ Describe "Invoke-Rename Chinvex Integration" -Tag "Task8" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "stillrenamed" }
-            $entry | Should Not Be $null
-            $entry.name | Should Be "stillrenamed"
+            $entry | Should -Not -Be $null
+            $entry.name | Should -Be "stillrenamed"
         }
     }
 
@@ -295,7 +295,7 @@ Describe "Invoke-Rename Chinvex Integration" -Tag "Task8" {
 
             Invoke-Rename -NameToRename "nochxrename" -NewName "newnochx" -NoChinvex -NonInteractive -StrapRootPath $script:testStrapRoot
 
-            Assert-MockCalled Invoke-Chinvex -Times 0
+            Should -Invoke Invoke-Chinvex -Times 0
         }
 
         It "should preserve existing chinvex_context when --no-chinvex is used" {
@@ -306,7 +306,7 @@ Describe "Invoke-Rename Chinvex Integration" -Tag "Task8" {
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "preserved" }
             # Note: context is stale (still "nochxrename") but preserved as-is
-            $entry.chinvex_context | Should Be "nochxrename"
+            $entry.chinvex_context | Should -Be "nochxrename"
         }
     }
 }

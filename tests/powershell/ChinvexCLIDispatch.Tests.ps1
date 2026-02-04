@@ -22,31 +22,31 @@ Describe "CLI Dispatch for Chinvex Commands" -Tag "Task12" {
     }
 
     It "should document 'contexts' command" {
-            $script:strapContent | Should Match 'contexts\s+.*[Ll]ist.*chinvex'
+            $script:strapContent | Should -Match 'contexts\s+.*[Ll]ist.*chinvex'
         }
 
         It "should document 'sync-chinvex' command" {
-            $script:strapContent | Should Match 'sync-chinvex\s+.*[Rr]econcile'
+            $script:strapContent | Should -Match 'sync-chinvex\s+.*[Rr]econcile'
         }
 
         It "should document --dry-run flag for sync-chinvex" {
-            $script:strapContent | Should Match '--dry-run'
+            $script:strapContent | Should -Match '--dry-run'
         }
 
         It "should document --reconcile flag for sync-chinvex" {
-            $script:strapContent | Should Match '--reconcile'
+            $script:strapContent | Should -Match '--reconcile'
         }
 
         It "should document --no-chinvex global flag" {
-            $script:strapContent | Should Match '--no-chinvex\s+.*[Ss]kip.*chinvex'
+            $script:strapContent | Should -Match '--no-chinvex\s+.*[Ss]kip.*chinvex'
         }
 
         It "should document --tool flag for clone/adopt" {
-            $script:strapContent | Should Match '--tool\s+.*[Rr]egister.*tool'
+            $script:strapContent | Should -Match '--tool\s+.*[Rr]egister.*tool'
         }
 
         It "should document --software flag for clone/adopt" {
-            $script:strapContent | Should Match '--software\s+.*[Rr]egister.*software'
+            $script:strapContent | Should -Match '--software\s+.*[Rr]egister.*software'
         }
 
     Context "Flag parsing integration" {
@@ -54,10 +54,10 @@ Describe "CLI Dispatch for Chinvex Commands" -Tag "Task12" {
             try {
                 # Parse-GlobalFlags is available from CLI.ps1 module
                 $result = Parse-GlobalFlags @("clone", "https://example.com/repo", "--no-chinvex")
-                $result.NoChinvex | Should Be $true
+                $result.NoChinvex | Should -Be $true
             } catch {
                 # Skip test if Parse-GlobalFlags not found
-                $true | Should Be $true
+                $true | Should -Be $true
             }
         }
 
@@ -65,10 +65,10 @@ Describe "CLI Dispatch for Chinvex Commands" -Tag "Task12" {
             try {
                 # Parse-GlobalFlags is available from CLI.ps1 module
                 $result = Parse-GlobalFlags @("clone", "https://example.com/repo", "--tool")
-                $result.IsTool | Should Be $true
+                $result.IsTool | Should -Be $true
             } catch {
                 # Skip test if Parse-GlobalFlags not found
-                $true | Should Be $true
+                $true | Should -Be $true
             }
         }
 
@@ -76,10 +76,10 @@ Describe "CLI Dispatch for Chinvex Commands" -Tag "Task12" {
             try {
                 # Parse-GlobalFlags is available from CLI.ps1 module
                 $result = Parse-GlobalFlags @("clone", "https://example.com/repo", "--software")
-                $result.IsSoftware | Should Be $true
+                $result.IsSoftware | Should -Be $true
             } catch {
                 # Skip test if Parse-GlobalFlags not found
-                $true | Should Be $true
+                $true | Should -Be $true
             }
         }
 
@@ -87,13 +87,13 @@ Describe "CLI Dispatch for Chinvex Commands" -Tag "Task12" {
             try {
                 # Parse-GlobalFlags is available from CLI.ps1 module
                 $result = Parse-GlobalFlags @("clone", "https://example.com/repo", "--tool", "--no-chinvex")
-                ($result.RemainingArgs -contains "clone") | Should Be $true
-                ($result.RemainingArgs -contains "https://example.com/repo") | Should Be $true
-                ($result.RemainingArgs -contains "--tool") | Should Be $false
-                ($result.RemainingArgs -contains "--no-chinvex") | Should Be $false
+                ($result.RemainingArgs -contains "clone") | Should -Be $true
+                ($result.RemainingArgs -contains "https://example.com/repo") | Should -Be $true
+                ($result.RemainingArgs -contains "--tool") | Should -Be $false
+                ($result.RemainingArgs -contains "--no-chinvex") | Should -Be $false
             } catch {
                 # Skip test if Parse-GlobalFlags not found
-                $true | Should Be $true
+                $true | Should -Be $true
             }
         }
     }

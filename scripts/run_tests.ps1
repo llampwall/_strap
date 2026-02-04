@@ -1,5 +1,12 @@
 Set-Location 'P:\software\_strap'
-$result = Invoke-Pester -Path tests\powershell -PassThru -Quiet
-Write-Host "`nPassed: $($result.PassedCount)"
-Write-Host "Failed: $($result.FailedCount)"
+
+$config = New-PesterConfiguration
+$config.Run.Path = 'tests\powershell'
+$config.Run.PassThru = $true
+$config.Output.Verbosity = 'Minimal'
+
+$result = Invoke-Pester -Configuration $config
+
+Write-Host "`nPassed: $($result.Passed.Count)"
+Write-Host "Failed: $($result.Failed.Count)"
 Write-Host "Total: $($result.TotalCount)"

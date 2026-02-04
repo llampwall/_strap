@@ -924,6 +924,23 @@ build/
 test-*.ps1                  # test suites for each command
 ```
 
+## Testing
+
+This project uses Pester 5 for automated testing. See [TESTING.md](TESTING.md) for detailed documentation.
+
+Quick start:
+```powershell
+# Install Pester 5
+Install-Module Pester -MinimumVersion 5.0.0 -Force -SkipPublisherCheck
+
+# Run all tests
+pwsh -File scripts\run_tests.ps1
+
+# Run specific test
+Import-Module Pester -MinimumVersion 5.0.0
+Invoke-Pester tests\powershell\YourTest.Tests.ps1 -Output Detailed
+```
+
 ## Skills
 
 This repo ships a local Codex skill to drive strap via intent inference:

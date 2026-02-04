@@ -37,19 +37,19 @@ Describe "Get-PathReferences" {
         $result = Get-PathReferences -RepoPaths $repoPaths
 
         # Assert
-        $result | Should Not BeNullOrEmpty
-        $result.Count | Should BeGreaterThan 0
+        $result | Should -Not -BeNullOrEmpty
+        $result.Count | Should -BeGreaterThan 0
 
         # Find matching entry
         $found = $false
         foreach ($entry in $result) {
             if ($entry.path -like "*chinvex*") {
-                $entry.type | Should Be "PATH"
+                $entry.type | Should -Be "PATH"
                 $found = $true
                 break
             }
         }
-        $found | Should Be $true
+        $found | Should -Be $true
     }
 
     It "should return empty array when no PATH entries match" {
@@ -61,7 +61,7 @@ Describe "Get-PathReferences" {
 
         # Assert
         $matchingNonExistent = $result | Where-Object { $_.path -like "*NonExistent*" }
-        $matchingNonExistent | Should BeNullOrEmpty
+        $matchingNonExistent | Should -BeNullOrEmpty
     }
 
     It "should normalize paths and match case-insensitively" {
@@ -72,7 +72,7 @@ Describe "Get-PathReferences" {
         $result = Get-PathReferences -RepoPaths $repoPaths
 
         # Assert
-        $result | Should Not BeNullOrEmpty
+        $result | Should -Not -BeNullOrEmpty
     }
 
     It "should check both User and Machine PATH variables" {
@@ -84,7 +84,7 @@ Describe "Get-PathReferences" {
 
         # Assert
         # Function should scan both scopes (implementation detail verified)
-        $result | Should Not BeNullOrEmpty
+        $result | Should -Not -BeNullOrEmpty
     }
 }
 
@@ -115,9 +115,9 @@ Set-Location C:\Projects\work
         $result = Get-ProfileReferences -ProfilePath $testProfilePath -RepoPaths $repoPaths
 
         # Assert
-        $result | Should Not BeNullOrEmpty
-        $result.Count | Should BeGreaterThan 1  # At least two references to chinvex
-        $result[0].type | Should Be "profile"
+        $result | Should -Not -BeNullOrEmpty
+        $result.Count | Should -BeGreaterThan 1  # At least two references to chinvex
+        $result[0].type | Should -Be "profile"
     }
 
     It "should return empty array when profile does not exist" {
@@ -129,7 +129,7 @@ Set-Location C:\Projects\work
         $result = Get-ProfileReferences -ProfilePath $nonExistentProfile -RepoPaths $repoPaths
 
         # Assert
-        $result | Should BeNullOrEmpty
+        $result | Should -BeNullOrEmpty
     }
 
     It "should return empty array when no profile references match" {
@@ -142,7 +142,7 @@ Set-Location C:\Projects\work
 
         # Assert
         $matchingNonExistent = $result | Where-Object { $_.path -like "*NonExistent*" }
-        $matchingNonExistent | Should BeNullOrEmpty
+        $matchingNonExistent | Should -BeNullOrEmpty
     }
 
     It "should normalize paths and match case-insensitively" {
@@ -154,6 +154,6 @@ Set-Location C:\Projects\work
         $result = Get-ProfileReferences -ProfilePath $testProfilePath -RepoPaths $repoPaths
 
         # Assert
-        $result | Should Not BeNullOrEmpty
+        $result | Should -Not -BeNullOrEmpty
     }
 }

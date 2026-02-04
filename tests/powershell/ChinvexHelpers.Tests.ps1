@@ -67,28 +67,28 @@ Describe "Detect-RepoScope" {
 
     It "should return 'tool' for path under tools_root" {
         $result = Detect-RepoScope -Path "P:\software\_scripts\mytool" -StrapRootPath $script:testStrapRoot
-        $result | Should Be "tool"
+        $result | Should -Be "tool"
     }
 
     It "should return 'software' for path under software_root but not tools_root" {
         $result = Detect-RepoScope -Path "P:\software\myrepo" -StrapRootPath $script:testStrapRoot
-        $result | Should Be "software"
+        $result | Should -Be "software"
     }
 
     It "should return null for path outside managed roots" {
         $result = Detect-RepoScope -Path "C:\random\path" -StrapRootPath $script:testStrapRoot
-        $result | Should Be $null
+        $result | Should -Be $null
     }
 
     It "should use most-specific match (tools_root before software_root)" {
         # P:\software\_scripts is under P:\software, but tools_root should match first
         $result = Detect-RepoScope -Path "P:\software\_scripts\nested\tool" -StrapRootPath $script:testStrapRoot
-        $result | Should Be "tool"
+        $result | Should -Be "tool"
     }
 
     It "should handle case-insensitive path comparison" {
         $result = Detect-RepoScope -Path "p:\SOFTWARE\myrepo" -StrapRootPath $script:testStrapRoot
-        $result | Should Be "software"
+        $result | Should -Be "software"
     }
 }
 
@@ -112,17 +112,17 @@ Describe "Get-ContextName" {
 
     It "should return 'tools' for tool scope" {
         $result = Get-ContextName -Scope "tool" -Name "mytool"
-        $result | Should Be "tools"
+        $result | Should -Be "tools"
     }
 
     It "should return entry name for software scope" {
         $result = Get-ContextName -Scope "software" -Name "myrepo"
-        $result | Should Be "myrepo"
+        $result | Should -Be "myrepo"
     }
 
     It "should ignore entry name for tool scope" {
         $result = Get-ContextName -Scope "tool" -Name "anytool"
-        $result | Should Be "tools"
+        $result | Should -Be "tools"
     }
 }
 
@@ -149,27 +149,27 @@ Describe "Test-ReservedContextName" {
 
     It "should return true for 'tools' with software scope" {
         $result = Test-ReservedContextName -Name "tools" -Scope "software"
-        $result | Should Be $true
+        $result | Should -Be $true
     }
 
     It "should return true for 'archive' with software scope" {
         $result = Test-ReservedContextName -Name "archive" -Scope "software"
-        $result | Should Be $true
+        $result | Should -Be $true
     }
 
     It "should return false for 'tools' with tool scope" {
         $result = Test-ReservedContextName -Name "tools" -Scope "tool"
-        $result | Should Be $false
+        $result | Should -Be $false
     }
 
     It "should return false for regular name with software scope" {
         $result = Test-ReservedContextName -Name "myrepo" -Scope "software"
-        $result | Should Be $false
+        $result | Should -Be $false
     }
 
     It "should be case-insensitive for reserved names" {
         $result = Test-ReservedContextName -Name "TOOLS" -Scope "software"
-        $result | Should Be $true
+        $result | Should -Be $true
     }
 }
 
@@ -277,7 +277,7 @@ Describe "Sync-ChinvexForEntry" {
         $script:invokeChinkexResults = @($false)
 
         $result = Sync-ChinvexForEntry -Scope "software" -Name "myrepo" -RepoPath "P:\software\myrepo"
-        $result | Should Be $null
+        $result | Should -Be $null
     }
 
     It "should return null when chinvex ingest fails" {
@@ -285,20 +285,20 @@ Describe "Sync-ChinvexForEntry" {
         $script:invokeChinkexResults = @($true, $false)
 
         $result = Sync-ChinvexForEntry -Scope "software" -Name "myrepo" -RepoPath "P:\software\myrepo"
-        $result | Should Be $null
+        $result | Should -Be $null
     }
 
     It "should return context name on success for software scope" {
         $script:invokeChinkexResults = @($true, $true)
 
         $result = Sync-ChinvexForEntry -Scope "software" -Name "myrepo" -RepoPath "P:\software\myrepo"
-        $result | Should Be "myrepo"
+        $result | Should -Be "myrepo"
     }
 
     It "should return 'tools' context name on success for tool scope" {
         $script:invokeChinkexResults = @($true, $true)
 
         $result = Sync-ChinvexForEntry -Scope "tool" -Name "mytool" -RepoPath "P:\software\_scripts\mytool"
-        $result | Should Be "tools"
+        $result | Should -Be "tools"
     }
 }

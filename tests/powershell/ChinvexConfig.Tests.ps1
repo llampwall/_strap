@@ -38,23 +38,23 @@ Describe "Config Schema Extension" -Tag "Task1" {
 
         It "should add chinvex_integration default (true)" {
             $config = Load-Config $script:testStrapRoot
-            $config.chinvex_integration | Should Be $true
+            $config.chinvex_integration | Should -Be $true
         }
 
         It "should add chinvex_whitelist default (['tools', 'archive'])" {
             $config = Load-Config $script:testStrapRoot
-            ("tools" -in $config.chinvex_whitelist) | Should Be $true
-            ("archive" -in $config.chinvex_whitelist) | Should Be $true
+            ("tools" -in $config.chinvex_whitelist) | Should -Be $true
+            ("archive" -in $config.chinvex_whitelist) | Should -Be $true
         }
 
         It "should add software_root default (P:\software)" {
             $config = Load-Config $script:testStrapRoot
-            $config.software_root | Should Be "P:\software"
+            $config.software_root | Should -Be "P:\software"
         }
 
         It "should add tools_root default (P:\software\_scripts)" {
             $config = Load-Config $script:testStrapRoot
-            $config.tools_root | Should Be "P:\software\_scripts"
+            $config.tools_root | Should -Be "P:\software\_scripts"
         }
     }
 
@@ -78,22 +78,22 @@ Describe "Config Schema Extension" -Tag "Task1" {
 
         It "should preserve explicit chinvex_integration value" {
             $config = Load-Config $script:testStrapRoot
-            $config.chinvex_integration | Should Be $false
+            $config.chinvex_integration | Should -Be $false
         }
 
         It "should preserve explicit chinvex_whitelist value" {
             $config = Load-Config $script:testStrapRoot
-            ("custom-ctx" -in $config.chinvex_whitelist) | Should Be $true
+            ("custom-ctx" -in $config.chinvex_whitelist) | Should -Be $true
         }
 
         It "should preserve explicit software_root value" {
             $config = Load-Config $script:testStrapRoot
-            $config.software_root | Should Be "D:\projects"
+            $config.software_root | Should -Be "D:\projects"
         }
 
         It "should preserve explicit tools_root value" {
             $config = Load-Config $script:testStrapRoot
-            $config.tools_root | Should Be "D:\tools"
+            $config.tools_root | Should -Be "D:\tools"
         }
     }
 }

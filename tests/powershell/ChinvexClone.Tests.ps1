@@ -75,7 +75,7 @@ Describe "Invoke-Clone Chinvex Integration" -Tag "Task4" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "testrepo" }
-            $entry.scope | Should Be "software"
+            $entry.scope | Should -Be "software"
         }
 
         It "should add 'scope' field with value 'tool' for --tool clone" {
@@ -86,7 +86,7 @@ Describe "Invoke-Clone Chinvex Integration" -Tag "Task4" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "mytool" }
-            $entry.scope | Should Be "tool"
+            $entry.scope | Should -Be "tool"
         }
 
         It "should add 'chinvex_context' field with repo name for software scope" {
@@ -97,7 +97,7 @@ Describe "Invoke-Clone Chinvex Integration" -Tag "Task4" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "myproject" }
-            $entry.chinvex_context | Should Be "myproject"
+            $entry.chinvex_context | Should -Be "myproject"
         }
 
         It "should add 'chinvex_context' field with 'tools' for tool scope" {
@@ -108,7 +108,7 @@ Describe "Invoke-Clone Chinvex Integration" -Tag "Task4" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "sometool" }
-            $entry.chinvex_context | Should Be "tools"
+            $entry.chinvex_context | Should -Be "tools"
         }
     }
 
@@ -119,7 +119,7 @@ Describe "Invoke-Clone Chinvex Integration" -Tag "Task4" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "nochx" }
-            $entry.chinvex_context | Should Be $null
+            $entry.chinvex_context | Should -Be $null
         }
 
         It "should set chinvex_context to null when chinvex unavailable" {
@@ -129,7 +129,7 @@ Describe "Invoke-Clone Chinvex Integration" -Tag "Task4" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "noavail" }
-            $entry.chinvex_context | Should Be $null
+            $entry.chinvex_context | Should -Be $null
         }
 
         It "should set chinvex_context to null when chinvex sync fails" {
@@ -140,19 +140,17 @@ Describe "Invoke-Clone Chinvex Integration" -Tag "Task4" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "failsync" }
-            $entry.chinvex_context | Should Be $null
+            $entry.chinvex_context | Should -Be $null
         }
     }
 
     Context "Reserved name validation" {
         It "should reject 'tools' as software repo name" {
-            { Invoke-Clone -GitUrl "https://github.com/user/tools" -StrapRootPath $script:testStrapRoot } |
-                Should Throw
+            { Invoke-Clone -GitUrl "https://github.com/user/tools" -StrapRootPath $script:testStrapRoot } | Should -Throw
         }
 
         It "should reject 'archive' as software repo name" {
-            { Invoke-Clone -GitUrl "https://github.com/user/archive" -StrapRootPath $script:testStrapRoot } |
-                Should Throw
+            { Invoke-Clone -GitUrl "https://github.com/user/archive" -StrapRootPath $script:testStrapRoot } | Should -Throw
         }
 
         It "should allow 'tools' as tool repo name (name ignored for tool scope)" {
@@ -160,8 +158,7 @@ Describe "Invoke-Clone Chinvex Integration" -Tag "Task4" {
             Mock Invoke-Chinvex { return $true }
 
             # Should not throw - tool repos can have any name
-            { Invoke-Clone -GitUrl "https://github.com/user/tools" -IsTool -StrapRootPath $script:testStrapRoot } |
-                Should Not Throw
+            { Invoke-Clone -GitUrl "https://github.com/user/tools" -IsTool -StrapRootPath $script:testStrapRoot } | Should -Not -Throw
         }
     }
 }

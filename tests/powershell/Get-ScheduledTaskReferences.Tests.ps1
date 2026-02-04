@@ -40,11 +40,11 @@ Describe "Get-ScheduledTaskReferences" {
         $result = Get-ScheduledTaskReferences -RepoPaths $repoPaths
 
         # Assert
-        $result | Should Not BeNullOrEmpty
-        $result.Count | Should BeGreaterThan 0
+        $result | Should -Not -BeNullOrEmpty
+        $result.Count | Should -BeGreaterThan 0
         $matchingTask = $result | Where-Object { $_.name -like "*MorningBrief*" }
-        $matchingTask | Should Not BeNullOrEmpty
-        $matchingTask.path | Should Match "C:\\Code\\chinvex"
+        $matchingTask | Should -Not -BeNullOrEmpty
+        $matchingTask.path | Should -Match "C:\\Code\\chinvex"
     }
 
     It "should return empty array when no tasks reference repo paths" {
@@ -55,7 +55,7 @@ Describe "Get-ScheduledTaskReferences" {
         $result = Get-ScheduledTaskReferences -RepoPaths $repoPaths
 
         # Assert
-        $result | Should BeNullOrEmpty
+        $result | Should -BeNullOrEmpty
     }
 
     It "should normalize paths and match case-insensitively" {
@@ -66,7 +66,7 @@ Describe "Get-ScheduledTaskReferences" {
         $result = Get-ScheduledTaskReferences -RepoPaths $repoPaths
 
         # Assert
-        $result | Should Not BeNullOrEmpty
+        $result | Should -Not -BeNullOrEmpty
     }
 
     It "should return empty array when no scheduled tasks exist for non-existent paths" {
@@ -77,6 +77,6 @@ Describe "Get-ScheduledTaskReferences" {
         $result = Get-ScheduledTaskReferences -RepoPaths $repoPaths
 
         # Assert
-        $result | Should BeNullOrEmpty
+        $result | Should -BeNullOrEmpty
     }
 }

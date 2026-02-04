@@ -93,8 +93,8 @@ Describe "Invoke-Uninstall Chinvex Integration" -Tag "Task9" {
 
             # Should call context archive
             $archiveCall = $script:chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "archive" }
-            $archiveCall | Should Not Be $null
-            ($archiveCall -contains "uninstallsoft") | Should Be $true
+            $archiveCall | Should -Not -Be $null
+            ($archiveCall -contains "uninstallsoft") | Should -Be $true
         }
 
         It "should remove entry from registry after uninstall" {
@@ -105,7 +105,7 @@ Describe "Invoke-Uninstall Chinvex Integration" -Tag "Task9" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "uninstallsoft" }
-            $entry | Should Be $null
+            $entry | Should -Be $null
         }
 
         It "should delete folder on uninstall" {
@@ -114,7 +114,7 @@ Describe "Invoke-Uninstall Chinvex Integration" -Tag "Task9" {
 
             Invoke-Uninstall -NameToRemove "uninstallsoft" -NonInteractive -StrapRootPath $script:testStrapRoot
 
-            (Test-Path $script:repoPath) | Should Be $false
+            (Test-Path $script:repoPath) | Should -Be $false
         }
     }
 
@@ -156,9 +156,9 @@ Describe "Invoke-Uninstall Chinvex Integration" -Tag "Task9" {
 
             # Should call remove-repo on tools context
             $removeCall = $script:chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "remove-repo" }
-            $removeCall | Should Not Be $null
-            ($removeCall -contains "tools") | Should Be $true
-            ($removeCall -contains "--repo") | Should Be $true
+            $removeCall | Should -Not -Be $null
+            ($removeCall -contains "tools") | Should -Be $true
+            ($removeCall -contains "--repo") | Should -Be $true
         }
 
         It "should NOT archive tools context when uninstalling a tool" {
@@ -175,7 +175,7 @@ Describe "Invoke-Uninstall Chinvex Integration" -Tag "Task9" {
 
             # Should NOT call archive for tools
             $archiveCall = $script:chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "archive" -and $_[2] -eq "tools" }
-            $archiveCall | Should Be $null
+            $archiveCall | Should -Be $null
         }
     }
 
@@ -212,10 +212,10 @@ Describe "Invoke-Uninstall Chinvex Integration" -Tag "Task9" {
             # Entry should still be removed
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "failuninstall" }
-            $entry | Should Be $null
+            $entry | Should -Be $null
 
             # Folder should still be deleted
-            (Test-Path $script:repoPath) | Should Be $false
+            (Test-Path $script:repoPath) | Should -Be $false
         }
     }
 
@@ -249,7 +249,7 @@ Describe "Invoke-Uninstall Chinvex Integration" -Tag "Task9" {
 
             Invoke-Uninstall -NameToRemove "nochxuninstall" -NoChinvex -NonInteractive -StrapRootPath $script:testStrapRoot
 
-            Assert-MockCalled Invoke-Chinvex -Times 0
+            Should -Invoke Invoke-Chinvex -Times 0
         }
 
         It "should still complete uninstall when --no-chinvex is used" {
@@ -259,7 +259,7 @@ Describe "Invoke-Uninstall Chinvex Integration" -Tag "Task9" {
 
             $registry = Get-Content $script:testRegistryPath -Raw | ConvertFrom-Json
             $entry = $registry.entries | Where-Object { $_.name -eq "nochxuninstall" }
-            $entry | Should Be $null
+            $entry | Should -Be $null
         }
     }
 
@@ -301,7 +301,7 @@ Describe "Invoke-Uninstall Chinvex Integration" -Tag "Task9" {
 
             # Should still archive
             $archiveCall = $script:chinvexCalls | Where-Object { $_[0] -eq "context" -and $_[1] -eq "archive" }
-            $archiveCall | Should Not Be $null
+            $archiveCall | Should -Not -Be $null
         }
     }
 }

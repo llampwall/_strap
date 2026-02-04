@@ -32,7 +32,7 @@ Describe "Chinvex CLI Wrapper" -Tag "Task2" {
 
         Mock Get-Command { return $null } -ParameterFilter { $Name -eq "chinvex" }
         $result = Test-ChinvexAvailable
-        $result | Should Be $false
+        $result | Should -Be $false
     }
 
     It "Test-ChinvexAvailable returns true when chinvex exists" {
@@ -41,7 +41,7 @@ Describe "Chinvex CLI Wrapper" -Tag "Task2" {
 
         Mock Get-Command { return @{ Name = "chinvex" } } -ParameterFilter { $Name -eq "chinvex" }
         $result = Test-ChinvexAvailable
-        $result | Should Be $true
+        $result | Should -Be $true
     }
 
     It "Test-ChinvexAvailable caches result on subsequent calls" {
@@ -52,9 +52,9 @@ Describe "Chinvex CLI Wrapper" -Tag "Task2" {
         $result1 = Test-ChinvexAvailable
         $result2 = Test-ChinvexAvailable
 
-        $result1 | Should Be $true
-        $result2 | Should Be $true
-        Assert-MockCalled Get-Command -Times 1
+        $result1 | Should -Be $true
+        $result2 | Should -Be $true
+        Should -Invoke Get-Command -Times 1
     }
 
     It "Test-ChinvexEnabled returns false with -NoChinvex flag" {
@@ -63,7 +63,7 @@ Describe "Chinvex CLI Wrapper" -Tag "Task2" {
 
         Mock Get-Command { return @{ Name = "chinvex" } } -ParameterFilter { $Name -eq "chinvex" }
         $result = Test-ChinvexEnabled -NoChinvex -StrapRootPath $script:testStrapRoot
-        $result | Should Be $false
+        $result | Should -Be $false
     }
 
     It "Test-ChinvexEnabled returns false when config disables integration" {
@@ -78,7 +78,7 @@ Describe "Chinvex CLI Wrapper" -Tag "Task2" {
 
         Mock Get-Command { return @{ Name = "chinvex" } } -ParameterFilter { $Name -eq "chinvex" }
         $result = Test-ChinvexEnabled -StrapRootPath $script:testStrapRoot
-        $result | Should Be $false
+        $result | Should -Be $false
     }
 
     It "Test-ChinvexEnabled returns true when integration enabled and chinvex available" {
@@ -93,7 +93,7 @@ Describe "Chinvex CLI Wrapper" -Tag "Task2" {
 
         Mock Get-Command { return @{ Name = "chinvex" } } -ParameterFilter { $Name -eq "chinvex" }
         $result = Test-ChinvexEnabled -StrapRootPath $script:testStrapRoot
-        $result | Should Be $true
+        $result | Should -Be $true
     }
 
     It "Invoke-Chinvex returns false when chinvex not available" {
@@ -102,7 +102,7 @@ Describe "Chinvex CLI Wrapper" -Tag "Task2" {
 
         Mock Get-Command { return $null } -ParameterFilter { $Name -eq "chinvex" }
         $result = Invoke-Chinvex -Arguments @("context", "list")
-        $result | Should Be $false
+        $result | Should -Be $false
     }
 
     It "Invoke-Chinvex returns true when command succeeds" {
@@ -113,7 +113,7 @@ Describe "Chinvex CLI Wrapper" -Tag "Task2" {
         Mock Invoke-Expression { $global:LASTEXITCODE = 0 } -ParameterFilter { $Command -like "*chinvex*" }
 
         $result = Invoke-Chinvex -Arguments @("context", "list")
-        $result | Should Be $true
+        $result | Should -Be $true
     }
 
     It "Invoke-Chinvex returns false when command fails" {
@@ -124,7 +124,7 @@ Describe "Chinvex CLI Wrapper" -Tag "Task2" {
         Mock Invoke-Expression { $global:LASTEXITCODE = 1 } -ParameterFilter { $Command -like "*chinvex*" }
 
         $result = Invoke-Chinvex -Arguments @("context", "create", "test")
-        $result | Should Be $false
+        $result | Should -Be $false
     }
 
     It "Invoke-ChinvexQuery returns null when chinvex not available" {
@@ -133,7 +133,7 @@ Describe "Chinvex CLI Wrapper" -Tag "Task2" {
 
         Mock Get-Command { return $null } -ParameterFilter { $Name -eq "chinvex" }
         $result = Invoke-ChinvexQuery -Arguments @("context", "list", "--json")
-        $result | Should Be $null
+        $result | Should -Be $null
     }
 
     It "Invoke-ChinvexQuery does not throw when called" {
@@ -141,6 +141,6 @@ Describe "Chinvex CLI Wrapper" -Tag "Task2" {
         $script:chinvexAvailable = $false
 
         Mock Get-Command { return @{ Name = "chinvex" } } -ParameterFilter { $Name -eq "chinvex" }
-        { Invoke-ChinvexQuery -Arguments @("context", "list", "--json") } | Should Not Throw
+        { Invoke-ChinvexQuery -Arguments @("context", "list", "--json") } | Should -Not -Throw
     }
 }

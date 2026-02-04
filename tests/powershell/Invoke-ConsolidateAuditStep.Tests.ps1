@@ -59,10 +59,10 @@ Describe "Consolidate Audit Step Integration" {
         $scheduledTasks = Get-ScheduledTaskReferences -RepoPaths $repoPaths
 
         # Assert - should detect the test scheduled task
-        $scheduledTasks | Should Not BeNullOrEmpty
-        $scheduledTasks.Count | Should BeGreaterThan 0
-        $scheduledTasks[0].name | Should Match "StrapTest-ConsolidateAudit"
-        $scheduledTasks[0].path | Should Match "testproject"
+        $scheduledTasks | Should -Not -BeNullOrEmpty
+        $scheduledTasks.Count | Should -BeGreaterThan 0
+        $scheduledTasks[0].name | Should -Match "StrapTest-ConsolidateAudit"
+        $scheduledTasks[0].path | Should -Match "testproject"
     }
 
     It "should build audit index as part of consolidate workflow" {
@@ -76,9 +76,9 @@ Describe "Consolidate Audit Step Integration" {
             -RegistryUpdatedAt $registryData.updated_at -Registry $registryData.entries
 
         # Assert
-        Test-Path $indexPath | Should Be $true
-        $index.repo_count | Should Be 1
-        $index.repos["C:\Code\testproject"] | Should Not BeNullOrEmpty
+        Test-Path $indexPath | Should -Be $true
+        $index.repo_count | Should -Be 1
+        $index.repos["C:\Code\testproject"] | Should -Not -BeNullOrEmpty
     }
 
     It "should cache audit index across multiple consolidate runs" {
@@ -100,7 +100,7 @@ Describe "Consolidate Audit Step Integration" {
             -RegistryUpdatedAt $registryData.updated_at -Registry $registryData.entries
 
         # Assert - timestamps should match (cached)
-        $secondIndex.built_at | Should Be $firstBuiltAt
+        $secondIndex.built_at | Should -Be $firstBuiltAt
     }
 
     It "should warn about external references but allow --ack-scheduled-tasks override" {
@@ -115,7 +115,7 @@ Describe "Consolidate Audit Step Integration" {
         $shouldBlock = ($auditWarnings.Count -gt 0) -and (-not $ackScheduledTasks)
 
         # Assert
-        $shouldBlock | Should Be $false
+        $shouldBlock | Should -Be $false
     }
 
     It "should block consolidate when external references exist without --ack-scheduled-tasks" {
@@ -129,6 +129,6 @@ Describe "Consolidate Audit Step Integration" {
         $shouldBlock = ($auditWarnings.Count -gt 0) -and (-not $ackScheduledTasks)
 
         # Assert
-        $shouldBlock | Should Be $true
+        $shouldBlock | Should -Be $true
     }
 }
