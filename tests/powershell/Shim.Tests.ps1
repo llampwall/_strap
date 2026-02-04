@@ -372,3 +372,91 @@ Describe "Invoke-Shim" {
             -Registry $Registry } | Should -Not -Throw
     }
 }
+
+Describe "Invoke-ShimRegen" {
+    BeforeAll {
+        . "$PSScriptRoot/../../modules/Config.ps1"
+    }
+
+    BeforeEach {
+        $script:TestRoot = Join-Path $TestDrive "strap-test"
+        $script:ShimsDir = Join-Path $TestRoot "bin"
+
+        New-Item -ItemType Directory -Path $TestRoot -Force | Out-Null
+        New-Item -ItemType Directory -Path $ShimsDir -Force | Out-Null
+
+        $script:Config = [PSCustomObject]@{
+            roots = [PSCustomObject]@{
+                software = $TestRoot
+                shims = $ShimsDir
+            }
+            defaults = [PSCustomObject]@{
+                pwshExe = "C:\Program Files\PowerShell\7\pwsh.exe"
+                nodeExe = "C:\nvm4w\nodejs\node.exe"
+            }
+            registry = Join-Path $TestRoot "registry.json"
+        }
+
+        # Mock pwshExe exists
+        Mock Test-Path { $true } -ParameterFilter { $Path -eq "C:\Program Files\PowerShell\7\pwsh.exe" }
+    }
+
+    It "regenerates all shims for a repo" {
+        $registry = @(
+            @{
+                name = "test-repo"
+                repoPath = Join-Path $TestRoot "test-repo"
+                scope = "software"
+                shims = @(
+                    @{
+                        name = "tool1"
+                        ps1Path = Join-Path $ShimsDir "tool1.ps1"
+                        type = "simple"
+                        exe = "tool1.exe"
+                        baseArgs = @()
+                    }
+                    @{
+                        name = "tool2"
+                        ps1Path = Join-Path $ShimsDir "tool2.ps1"
+                        type = "simple"
+                        exe = "tool2.exe"
+                        baseArgs = @("--flag")
+                    }
+                )
+            }
+        )
+
+        Invoke-ShimRegen -RepoName "test-repo" -Config $Config -Registry $registry
+
+        Test-Path (Join-Path $ShimsDir "tool1.ps1") | Should -BeTrue
+        Test-Path (Join-Path $ShimsDir "tool1.cmd") | Should -BeTrue
+        Test-Path (Join-Path $ShimsDir "tool2.ps1") | Should -BeTrue
+        Test-Path (Join-Path $ShimsDir "tool2.cmd") | Should -BeTrue
+    }
+
+    It "errors on unknown repo" {
+        $registry = @(
+            @{
+                name = "other-repo"
+                repoPath = Join-Path $TestRoot "other-repo"
+                scope = "software"
+                shims = @()
+            }
+        )
+
+        { Invoke-ShimRegen -RepoName "nonexistent" -Config $Config -Registry $registry } | Should -Throw "*not found*"
+    }
+
+    It "handles repo with no shims" {
+        $registry = @(
+            @{
+                name = "empty-repo"
+                repoPath = Join-Path $TestRoot "empty-repo"
+                scope = "software"
+                shims = @()
+            }
+        )
+
+        { Invoke-ShimRegen -RepoName "empty-repo" -Config $Config -Registry $registry } | Should -Not -Throw
+    }
+}
