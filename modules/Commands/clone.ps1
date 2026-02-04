@@ -71,6 +71,19 @@ function Invoke-Clone {
     $tags = @()
   }
 
+  # Detect stack (best-effort)
+  $stackDetected = $null
+  Push-Location $absolutePath
+  try {
+    if (Test-Path "pyproject.toml") { $stackDetected = "python" }
+    elseif (Test-Path "requirements.txt") { $stackDetected = "python" }
+    elseif (Test-Path "package.json") { $stackDetected = "node" }
+    elseif (Test-Path "Cargo.toml") { $stackDetected = "rust" }
+    elseif (Test-Path "go.mod") { $stackDetected = "go" }
+  } finally {
+    Pop-Location
+  }
+
   # Create new entry with V3 metadata fields
   $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
   $entry = [PSCustomObject]@{
@@ -83,7 +96,7 @@ function Invoke-Clone {
     tags            = $tags
     chinvex_context = $null  # Default, updated below if sync succeeds
     shims           = @()
-    stack           = @()
+    stack           = if ($stackDetected) { $stackDetected } else { @() }
     created_at      = $timestamp
     updated_at      = $timestamp
   }

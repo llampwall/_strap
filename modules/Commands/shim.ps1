@@ -153,7 +153,8 @@ function Invoke-Shim {
 
         # Behavior
         [switch]$ForceOverwrite,
-        [switch]$DryRun
+        [switch]$DryRun,
+        [switch]$AllowMissingVenv
     )
 
     # Validate shim name
@@ -195,11 +196,15 @@ function Invoke-Shim {
 
     switch ($ShimType) {
         "venv" {
-            $resolvedVenv = Resolve-ShimVenvPath -RepoPath $repoEntry.path -ExplicitPath $VenvPath
+            $resolvedVenv = Resolve-ShimVenvPath -RepoPath $repoEntry.path -ExplicitPath $VenvPath -AllowMissing:$AllowMissingVenv
             $resolution = Resolve-ShimVenvExe -Exe $shimExe -VenvPath $resolvedVenv
             $resolvedExe = $resolution.resolvedPath
             if (-not $resolution.exists) {
-                Warn "Exe not found in venv: $resolvedExe. Shim may not work until package is installed."
+                if ($AllowMissingVenv) {
+                    # Silent for auto-discovery - shim will work after setup
+                } else {
+                    Warn "Exe not found in venv: $resolvedExe. Shim may not work until package is installed."
+                }
             }
         }
         "node" {
@@ -354,7 +359,8 @@ function Invoke-ShimRegen {
 function Resolve-ShimVenvPath {
     param(
         [Parameter(Mandatory)][string]$RepoPath,
-        [string]$ExplicitPath
+        [string]$ExplicitPath,
+        [switch]$AllowMissing
     )
 
     if ($ExplicitPath) {
@@ -368,6 +374,11 @@ function Resolve-ShimVenvPath {
         if (Test-Path $pythonExe) {
             return $testPath
         }
+    }
+
+    # If AllowMissing, return default .venv path even if it doesn't exist
+    if ($AllowMissing) {
+        return (Join-Path $RepoPath ".venv")
     }
 
     Die "No venv found in $RepoPath. Use --venv <path> to specify explicitly."
@@ -479,6 +490,7 @@ function Invoke-ShimAutoDiscover {
                 Registry = $Registry
                 RegistryEntryName = $RepoEntry.name
                 ShimType = $spec.type
+                AllowMissingVenv = $true
             }
 
             if ($spec.exe) { $shimArgs.Exe = $spec.exe }
