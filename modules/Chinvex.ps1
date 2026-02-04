@@ -134,9 +134,9 @@ function Test-ReservedContextName {
 function Sync-ChinvexForEntry {
     <#
     .SYNOPSIS
-        High-level function to create chinvex context and register repo path.
+        High-level function to create chinvex context and ingest repo.
     .DESCRIPTION
-        Creates individual context with metadata, then registers repo path (register-only, no full ingestion).
+        Creates individual context with metadata, then fully ingests the repo.
         Returns context name on success, $null on any failure (canonical error handling).
     .PARAMETER Name
         The entry/repo name.
@@ -177,13 +177,12 @@ function Sync-ChinvexForEntry {
         return $null
     }
 
-    # Step 2: Register repo with metadata
+    # Step 2: Ingest repo with metadata
     $baseArgs = @(
         "ingest", "--context", $contextName,
         "--repo", $RepoPath,
         "--chinvex-depth", $ChinvexDepth,
-        "--status", $Status,
-        "--register-only"
+        "--status", $Status
     )
 
     # Add tags if present
@@ -192,9 +191,9 @@ function Sync-ChinvexForEntry {
         $baseArgs += ($Tags -join ",")
     }
 
-    $registered = Invoke-Chinvex -Arguments $baseArgs
-    if (-not $registered) {
-        Warn "Failed to register repo in chinvex context '$contextName'"
+    $ingested = Invoke-Chinvex -Arguments $baseArgs
+    if (-not $ingested) {
+        Warn "Failed to ingest repo in chinvex context '$contextName'"
         return $null
     }
 
