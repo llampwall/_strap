@@ -58,3 +58,103 @@ Describe "Parse-ShimCommandLine" {
         }
     }
 }
+
+Describe "Resolve-ShimVenvPath" {
+    It "returns explicit path when provided" {
+        $testRepo = Join-Path $TestDrive "test-explicit"
+        New-Item -ItemType Directory -Path $testRepo -Force | Out-Null
+
+        $result = Resolve-ShimVenvPath -RepoPath $testRepo -ExplicitPath "C:\custom\venv"
+        $result | Should -Be "C:\custom\venv"
+    }
+
+    It "auto-detects .venv" {
+        $testRepo = Join-Path $TestDrive "test-dotvenv"
+        New-Item -ItemType Directory -Path $testRepo -Force | Out-Null
+
+        $venvPath = Join-Path $testRepo ".venv\Scripts"
+        New-Item -ItemType Directory -Path $venvPath -Force | Out-Null
+        New-Item -ItemType File -Path (Join-Path $venvPath "python.exe") -Force | Out-Null
+
+        $result = Resolve-ShimVenvPath -RepoPath $testRepo
+        $result | Should -Be (Join-Path $testRepo ".venv")
+    }
+
+    It "auto-detects venv" {
+        $testRepo = Join-Path $TestDrive "test-venv"
+        New-Item -ItemType Directory -Path $testRepo -Force | Out-Null
+
+        $venvPath = Join-Path $testRepo "venv\Scripts"
+        New-Item -ItemType Directory -Path $venvPath -Force | Out-Null
+        New-Item -ItemType File -Path (Join-Path $venvPath "python.exe") -Force | Out-Null
+
+        $result = Resolve-ShimVenvPath -RepoPath $testRepo
+        $result | Should -Be (Join-Path $testRepo "venv")
+    }
+
+    It "errors when no venv found" {
+        $testRepo = Join-Path $TestDrive "test-novenv"
+        New-Item -ItemType Directory -Path $testRepo -Force | Out-Null
+
+        { Resolve-ShimVenvPath -RepoPath $testRepo } | Should -Throw "*No venv found*"
+    }
+}
+
+Describe "Resolve-ShimVenvExe" {
+    BeforeEach {
+        $script:TestVenv = Join-Path $TestDrive "test-venv"
+        $script:ScriptsDir = Join-Path $TestVenv "Scripts"
+        New-Item -ItemType Directory -Path $ScriptsDir -Force | Out-Null
+    }
+
+    It "resolves python to python.exe" {
+        New-Item -ItemType File -Path (Join-Path $ScriptsDir "python.exe") -Force | Out-Null
+
+        $result = Resolve-ShimVenvExe -Exe "python" -VenvPath $TestVenv
+        $result.resolvedPath | Should -Be (Join-Path $ScriptsDir "python.exe")
+        $result.exists | Should -BeTrue
+    }
+
+    It "resolves script name to .exe" {
+        New-Item -ItemType File -Path (Join-Path $ScriptsDir "chinvex.exe") -Force | Out-Null
+
+        $result = Resolve-ShimVenvExe -Exe "chinvex" -VenvPath $TestVenv
+        $result.resolvedPath | Should -Be (Join-Path $ScriptsDir "chinvex.exe")
+        $result.exists | Should -BeTrue
+    }
+
+    It "returns exists=false for missing exe" {
+        $result = Resolve-ShimVenvExe -Exe "missing" -VenvPath $TestVenv
+        $result.exists | Should -BeFalse
+    }
+}
+
+Describe "Resolve-ShimNodeExe" {
+    BeforeEach {
+        $script:Config = [PSCustomObject]@{
+            defaults = [PSCustomObject]@{
+                nodeExe = "C:\nvm4w\nodejs\node.exe"
+            }
+        }
+    }
+
+    It "uses CLI override when provided" {
+        Mock Test-Path { $true } -ParameterFilter { $Path -eq "C:\custom\node.exe" }
+
+        $result = Resolve-ShimNodeExe -CliOverride "C:\custom\node.exe" -Config $Config
+        $result | Should -Be "C:\custom\node.exe"
+    }
+
+    It "errors when CLI override not found" {
+        Mock Test-Path { $false }
+
+        { Resolve-ShimNodeExe -CliOverride "C:\missing\node.exe" -Config $Config } | Should -Throw "*not found*"
+    }
+
+    It "uses config default when no override" {
+        Mock Test-Path { $true } -ParameterFilter { $Path -eq "C:\nvm4w\nodejs\node.exe" }
+
+        $result = Resolve-ShimNodeExe -Config $Config
+        $result | Should -Be "C:\nvm4w\nodejs\node.exe"
+    }
+}
