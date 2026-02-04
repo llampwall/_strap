@@ -5,9 +5,10 @@ Complete Windows dev environment manager with three capabilities:
 **1. Template bootstrapping** — spin up new projects from templates (node-ts-service, mono, python, etc.) with deps installed and ready to code.
 
 **2. Lifecycle management** — the real power:
+- **Instant system-wide availability**: `clone` or `adopt` a repo → automatic stack detection (python/node/go/rust) → auto-creates venv shims → tool available globally in seconds
 - Clone GitHub repos and track them in a central registry
-- Install deps safely with stack auto-detection (python/node/go/rust)
-- Create global `.cmd` shims for any command (no manual PATH edits)
+- Auto-discovers entry points from `pyproject.toml`, `setup.py`, `package.json`
+- Creates global `.cmd`/`.ps1` shims for any command (no manual PATH edits)
 - Move and rename repos while keeping registry consistent
 - Update all your tools at once (`--all` flag)
 - Uninstall cleanly (removes folder + shims + registry entry)
@@ -24,6 +25,41 @@ Complete Windows dev environment manager with three capabilities:
 -->
 
 **What makes it special:** Single front door for your dev tools. Instead of scattered `git clone` + manual PATH edits + "where did I put that script?", everything goes through strap.
+
+## Core Workflow: Instant System-Wide Availability
+
+The central value proposition of strap:
+
+```
+Git URL or local folder → strap adopt/clone → instant global availability
+```
+
+**How it works:**
+
+1. **`strap clone <url>`** or **`cd folder && strap adopt`**
+   - Detects stack (Python/Node/Go/Rust) from project files
+   - Adds repo to central registry with metadata
+
+2. **Automatic shim discovery** (happens during adopt/clone):
+   - **Python**: parses `pyproject.toml` ([project.scripts], [tool.poetry.scripts]) or `setup.py` (console_scripts)
+   - **Node**: parses `package.json` (bin field)
+   - Creates venv shims (Python) or node shims (Node) in `P:\software\bin`
+
+3. **Done!** Tools are now available system-wide
+   - One-time PATH setup: add `P:\software\bin` to your PATH
+   - Every new tool auto-creates shims, no PATH editing needed ever again
+
+**Example:**
+```powershell
+strap clone https://github.com/llampwall/chinvex
+# ✓ Auto-detected Python stack
+# ✓ Found 2 entry points in pyproject.toml
+# ✓ Created shims: chinvex.{ps1,cmd}, chinvex-mcp.{ps1,cmd}
+
+chinvex --help  # works immediately!
+```
+
+Manual shim creation is still available for custom launchers or aliases.
 
 ## Templates
 
@@ -54,25 +90,42 @@ strap myrepo -t mono --start
 
 ### Lifecycle Management
 
+**The magic workflow — Git URL to system-wide availability:**
+
 ```powershell
-# clone a tool and register it
-strap clone https://github.com/user/cli-tool --tool
+# Option 1: Clone from GitHub
+strap clone https://github.com/llampwall/chinvex
+# → Auto-detects Python stack from pyproject.toml
+# → Finds [project.scripts]: chinvex, chinvex-mcp
+# → Creates venv shims in P:\software\bin
+# → chinvex and chinvex-mcp now available globally!
 
-# install its dependencies (auto-detects python/node/go/rust)
-strap setup --repo cli-tool --yes
+# Option 2: Adopt existing repo
+cd P:\my-projects\awesome-tool
+strap adopt
+# → Auto-detects Node stack from package.json
+# → Finds "bin" field with CLI entry point
+# → Creates node shims in P:\software\bin
+# → awesome-tool now available globally!
 
-# create a global launcher (no PATH editing needed)
-strap shim mytool --cmd "python -m cli_tool" --repo cli-tool
+# Install dependencies (auto-detects python/node/go/rust)
+strap setup --repo chinvex --yes
 
-# now "mytool" works from anywhere
-mytool --help
+# Update all your tools at once
+strap update --all
 
-# update all your tools at once
-strap update --all --tool
+# Manually create additional shims if needed
+strap shim custom-alias --cmd "python -m chinvex.special" --repo chinvex
 
-# diagnose issues
+# Diagnose issues
 strap doctor
 ```
+
+**What just happened?**
+- Stack detection: reads `pyproject.toml`, `setup.py`, `package.json` to identify Python/Node
+- Entry point discovery: parses `[project.scripts]`, `[tool.poetry.scripts]`, `console_scripts`, or `package.json.bin`
+- Shim creation: generates `.ps1` + `.cmd` launchers in `P:\software\bin` (one-time PATH setup)
+- Venv integration: Python shims point to `.venv\Scripts\tool.exe`, Node shims use `node.exe + entrypoint`
 
 <!--
 ### Consolidation (Migrate Existing Repos)
@@ -153,6 +206,7 @@ strap doctor [--json]
 #### Lifecycle Management
 
 **clone**
+- Automatically discovers and creates shims for Python and Node projects after cloning
 - `<github-url>` — GitHub repository URL (https or git)
 - `--tool` — use tool preset (depth=light, status=stable, tags=[third-party]); all repos clone to `P:\software`
 - `--name <custom-name>` — override the repo name (default: extracted from URL)
@@ -178,6 +232,7 @@ strap doctor [--json]
 - `--force` — reserved for future use
 
 **adopt**
+- Automatically discovers and creates shims for Python and Node projects
 - `--path <dir>` — path to existing repo (default: current directory)
 - `--name <name>` — custom registry name (default: folder name)
 - `--tool` — use tool preset (depth=light, status=stable, tags=[third-party])
