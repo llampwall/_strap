@@ -72,8 +72,8 @@ function Load-Registry($configObj) {
     Die "Registry version $($json.version) requires newer strap (supports v$script:LATEST_REGISTRY_VERSION)"
   }
 
-  # V2 format
-  if ($json.repos) {
+  # V2/V3 format
+  if ($json.PSObject.Properties['repos']) {
     # V2→V3 migration
     if ($json.version -eq 2) {
       foreach ($entry in $json.repos) {

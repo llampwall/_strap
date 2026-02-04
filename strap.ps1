@@ -275,7 +275,7 @@ $script:chinvexAvailable = $false
 
 # Migration constants and helpers
 
-$script:LATEST_REGISTRY_VERSION = 1
+$script:LATEST_REGISTRY_VERSION = 3
 
 # Consolidate helper functions
 
