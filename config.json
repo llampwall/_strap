@@ -2,7 +2,13 @@
   "roots": {
     "software": "P:\\software",
     "tools": "P:\\software\\_scripts",
-    "shims": "P:\\software\\_scripts\\_bin"
+    "shims": "P:\\software\\bin",
+    "nodeTools": "P:\\software\\_node-tools",
+    "archive": "P:\\software\\_archive"
   },
-  "registry": "P:\\software\\_strap\\registry.json"
+  "defaults": {
+    "pwshExe": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+    "nodeExe": "C:\\nvm4w\\nodejs\\node.exe"
+  },
+  "registry": "P:\\software\\_strap\\build\\registry.json"
 }

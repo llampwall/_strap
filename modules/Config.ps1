@@ -5,7 +5,7 @@
 . "$PSScriptRoot\Core.ps1"
 
 # Registry version constant
-$script:LATEST_REGISTRY_VERSION = 1
+$script:LATEST_REGISTRY_VERSION = 2
 
 function Load-Config($strapRoot) {
   $configPath = Join-Path $strapRoot "config.json"
@@ -28,60 +28,85 @@ function Load-Config($strapRoot) {
     $json | Add-Member -NotePropertyName tools_root -NotePropertyValue "P:\software\_scripts" -Force
   }
 
+  # Apply defaults for shims and nodeTools roots
+  if (-not $json.roots.shims) {
+    $json.roots | Add-Member -NotePropertyName shims -NotePropertyValue "P:\software\bin" -Force
+  }
+  if (-not $json.roots.nodeTools) {
+    $json.roots | Add-Member -NotePropertyName nodeTools -NotePropertyValue "P:\software\_node-tools" -Force
+  }
+  if (-not $json.roots.archive) {
+    $json.roots | Add-Member -NotePropertyName archive -NotePropertyValue "P:\software\_archive" -Force
+  }
+
+  # Apply defaults for pwshExe and nodeExe
+  if (-not $json.defaults) {
+    $json | Add-Member -NotePropertyName defaults -NotePropertyValue ([PSCustomObject]@{}) -Force
+  }
+  if (-not $json.defaults.pwshExe) {
+    $json.defaults | Add-Member -NotePropertyName pwshExe -NotePropertyValue "C:\Program Files\PowerShell\7\pwsh.exe" -Force
+  }
+  if (-not $json.defaults.nodeExe) {
+    $json.defaults | Add-Member -NotePropertyName nodeExe -NotePropertyValue "C:\nvm4w\nodejs\node.exe" -Force
+  }
+
   return $json
 }
 
 function Load-Registry($configObj) {
   $registryPath = $configObj.registry
   if (-not (Test-Path $registryPath)) {
-    # Create empty registry if it doesn't exist
+    # Create empty v2 registry
     $parentDir = Split-Path $registryPath -Parent
     if (-not (Test-Path $parentDir)) {
       New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
     }
-    "[]" | Set-Content -LiteralPath $registryPath -NoNewline
+    $empty = @{ version = $script:LATEST_REGISTRY_VERSION; repos = @() } | ConvertTo-Json -Depth 10
+    $empty | Set-Content -LiteralPath $registryPath -NoNewline
     return @()
   }
-  $content = Get-Content -LiteralPath $registryPath -Raw
-  if ($content.Trim() -eq "[]") {
-    return @()
-  }
-  $json = $content | ConvertFrom-Json
 
-  # Handle both legacy (array) and new (object) formats
+  $json = Get-Content -LiteralPath $registryPath -Raw | ConvertFrom-Json
+
+  # Handle legacy array format (v1)
   if ($json -is [System.Array]) {
-    # Legacy format: bare array
-    return @($json)
-  } elseif ($json.PSObject.Properties['entries']) {
-    # New format: object with entries property
-    $entries = $json.entries
-    if ($entries -is [System.Array]) {
-      return @($entries)
-    } else {
-      return @($entries)
-    }
-  } else {
-    # Unknown format or single object: wrap in array
     return @($json)
   }
+
+  # Check version
+  if ($json.version -and $json.version -gt $script:LATEST_REGISTRY_VERSION) {
+    Die "Registry version $($json.version) requires newer strap (supports v$script:LATEST_REGISTRY_VERSION)"
+  }
+
+  # V2 format
+  if ($json.repos) {
+    return @($json.repos)
+  }
+
+  # Legacy v1 with entries field
+  if ($json.entries) {
+    return @($json.entries)
+  }
+
+  # Legacy v1 single object (when JSON array with 1 item is serialized/deserialized)
+  if ($json.PSObject.Properties['name'] -and $json.PSObject.Properties['path']) {
+    return @($json)
+  }
+
+  Die "Unrecognized registry format"
 }
 
 function Save-Registry($configObj, $entries) {
   $registryPath = $configObj.registry
   $tmpPath = "$registryPath.tmp"
 
-  # Always write in versioned format (V1)
-  $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
   $registryObj = [PSCustomObject]@{
-    registry_version = 1
-    updated_at = $timestamp
-    entries = @($entries)
+    version = $script:LATEST_REGISTRY_VERSION
+    repos = @($entries)
   }
 
   $json = $registryObj | ConvertTo-Json -Depth 10
   [System.IO.File]::WriteAllText($tmpPath, $json, (New-Object System.Text.UTF8Encoding($false)))
-
-  # Atomic move (overwrites destination)
   Move-Item -LiteralPath $tmpPath -Destination $registryPath -Force
 }
 
@@ -157,36 +182,44 @@ function Validate-RegistrySchema {
 function Load-Registry($configObj) {
   $registryPath = $configObj.registry
   if (-not (Test-Path $registryPath)) {
-    # Create empty registry if it doesn't exist
+    # Create empty v2 registry
     $parentDir = Split-Path $registryPath -Parent
     if (-not (Test-Path $parentDir)) {
       New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
     }
-    "[]" | Set-Content -LiteralPath $registryPath -NoNewline
+    $empty = @{ version = $script:LATEST_REGISTRY_VERSION; repos = @() } | ConvertTo-Json -Depth 10
+    $empty | Set-Content -LiteralPath $registryPath -NoNewline
     return @()
   }
-  $content = Get-Content -LiteralPath $registryPath -Raw
-  if ($content.Trim() -eq "[]") {
-    return @()
-  }
-  $json = $content | ConvertFrom-Json
 
-  # Handle both legacy (array) and new (object) formats
+  $json = Get-Content -LiteralPath $registryPath -Raw | ConvertFrom-Json
+
+  # Handle legacy array format (v1)
   if ($json -is [System.Array]) {
-    # Legacy format: bare array
-    return @($json)
-  } elseif ($json.PSObject.Properties['entries']) {
-    # New format: object with entries property
-    $entries = $json.entries
-    if ($entries -is [System.Array]) {
-      return @($entries)
-    } else {
-      return @($entries)
-    }
-  } else {
-    # Unknown format or single object: wrap in array
     return @($json)
   }
+
+  # Check version
+  if ($json.version -and $json.version -gt $script:LATEST_REGISTRY_VERSION) {
+    Die "Registry version $($json.version) requires newer strap (supports v$script:LATEST_REGISTRY_VERSION)"
+  }
+
+  # V2 format
+  if ($json.repos) {
+    return @($json.repos)
+  }
+
+  # Legacy v1 with entries field
+  if ($json.entries) {
+    return @($json.entries)
+  }
+
+  # Legacy v1 single object (when JSON array with 1 item is serialized/deserialized)
+  if ($json.PSObject.Properties['name'] -and $json.PSObject.Properties['path']) {
+    return @($json)
+  }
+
+  Die "Unrecognized registry format"
 }
 
 
@@ -194,18 +227,13 @@ function Save-Registry($configObj, $entries) {
   $registryPath = $configObj.registry
   $tmpPath = "$registryPath.tmp"
 
-  # Always write in versioned format (V1)
-  $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
   $registryObj = [PSCustomObject]@{
-    registry_version = 1
-    updated_at = $timestamp
-    entries = @($entries)
+    version = $script:LATEST_REGISTRY_VERSION
+    repos = @($entries)
   }
 
   $json = $registryObj | ConvertTo-Json -Depth 10
   [System.IO.File]::WriteAllText($tmpPath, $json, (New-Object System.Text.UTF8Encoding($false)))
-
-  # Atomic move (overwrites destination)
   Move-Item -LiteralPath $tmpPath -Destination $registryPath -Force
 }
 
