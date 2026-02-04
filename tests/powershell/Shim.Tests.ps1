@@ -244,3 +244,131 @@ Describe "New-ShimCmdContent" {
         $content | Should -Match 'exit /b %errorlevel%'
     }
 }
+
+Describe "Invoke-Shim" {
+    BeforeAll {
+        . "$PSScriptRoot/../../modules/Config.ps1"
+    }
+
+    BeforeEach {
+        $script:TestRoot = Join-Path $TestDrive "strap-test"
+        $script:ShimsDir = Join-Path $TestRoot "bin"
+        $script:RegistryPath = Join-Path $TestRoot "registry.json"
+
+        New-Item -ItemType Directory -Path $TestRoot -Force | Out-Null
+        New-Item -ItemType Directory -Path $ShimsDir -Force | Out-Null
+
+        # Create test config
+        $script:Config = [PSCustomObject]@{
+            roots = [PSCustomObject]@{
+                software = $TestRoot
+                shims = $ShimsDir
+            }
+            defaults = [PSCustomObject]@{
+                pwshExe = "C:\Program Files\PowerShell\7\pwsh.exe"
+                nodeExe = "C:\nvm4w\nodejs\node.exe"
+            }
+            registry = $RegistryPath
+        }
+
+        # Create test registry with a repo
+        $script:Registry = @(
+            @{
+                name = "test-repo"
+                repoPath = Join-Path $TestRoot "test-repo"
+                scope = "software"
+                shims = @()
+            }
+        )
+
+        # Create repo directory
+        New-Item -ItemType Directory -Path $Registry[0].repoPath -Force | Out-Null
+    }
+
+    It "creates simple shim files" {
+        Mock Test-Path { $true } -ParameterFilter { $Path -eq "C:\Program Files\PowerShell\7\pwsh.exe" }
+
+        Invoke-Shim -ShimName "mytool" `
+            -Cmd "mytool.exe --verbose" `
+            -ShimType "simple" `
+            -RegistryEntryName "test-repo" `
+            -Config $Config `
+            -Registry $Registry
+
+        $ps1Path = Join-Path $ShimsDir "mytool.ps1"
+        $cmdPath = Join-Path $ShimsDir "mytool.cmd"
+
+        Test-Path $ps1Path | Should -BeTrue
+        Test-Path $cmdPath | Should -BeTrue
+    }
+
+    It "errors on missing pwshExe" {
+        Mock Test-Path { $false } -ParameterFilter { $Path -eq "C:\Program Files\PowerShell\7\pwsh.exe" }
+
+        { Invoke-Shim -ShimName "mytool" `
+            -Cmd "mytool.exe" `
+            -ShimType "simple" `
+            -RegistryEntryName "test-repo" `
+            -Config $Config `
+            -Registry $Registry } | Should -Throw "*pwshExe*"
+    }
+
+    It "errors on unknown repo" {
+        { Invoke-Shim -ShimName "mytool" `
+            -Cmd "mytool.exe" `
+            -ShimType "simple" `
+            -RegistryEntryName "nonexistent" `
+            -Config $Config `
+            -Registry $Registry } | Should -Throw "*not found*"
+    }
+
+    It "validates shim name format" {
+        { Invoke-Shim -ShimName "my tool" `
+            -Cmd "mytool.exe" `
+            -ShimType "simple" `
+            -RegistryEntryName "test-repo" `
+            -Config $Config `
+            -Registry $Registry } | Should -Throw "*Invalid shim name*"
+    }
+
+    It "detects collision with different repo" {
+        Mock Test-Path { $true } -ParameterFilter { $Path -eq "C:\Program Files\PowerShell\7\pwsh.exe" }
+
+        # Create existing shim owned by another repo
+        $Registry += @{
+            name = "other-repo"
+            repoPath = Join-Path $TestRoot "other-repo"
+            scope = "software"
+            shims = @(
+                @{ name = "mytool"; ps1Path = Join-Path $ShimsDir "mytool.ps1" }
+            )
+        }
+        "" | Set-Content (Join-Path $ShimsDir "mytool.ps1")
+
+        { Invoke-Shim -ShimName "mytool" `
+            -Cmd "mytool.exe" `
+            -ShimType "simple" `
+            -RegistryEntryName "test-repo" `
+            -Config $Config `
+            -Registry $Registry } | Should -Throw "*already exists*other-repo*"
+    }
+
+    It "allows update when same repo owns shim" {
+        Mock Test-Path { $true } -ParameterFilter { $Path -eq "C:\Program Files\PowerShell\7\pwsh.exe" }
+
+        # Add existing shim to test-repo
+        $Registry[0].shims = @(
+            @{ name = "mytool"; ps1Path = Join-Path $ShimsDir "mytool.ps1" }
+        )
+        "" | Set-Content (Join-Path $ShimsDir "mytool.ps1")
+        "" | Set-Content (Join-Path $ShimsDir "mytool.cmd")
+
+        # Should not throw - same repo
+        { Invoke-Shim -ShimName "mytool" `
+            -Cmd "newtool.exe" `
+            -ShimType "simple" `
+            -RegistryEntryName "test-repo" `
+            -Config $Config `
+            -Registry $Registry } | Should -Not -Throw
+    }
+}
