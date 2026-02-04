@@ -1,0 +1,323 @@
+# setup.ps1
+# Command: Invoke-Setup
+
+function Invoke-Setup {
+  param(
+    [string] $RepoNameOrPath,
+    [string] $ForceStack,
+    [string] $VenvPath,
+    [switch] $UseUv,
+    [string] $PythonExe,
+    [string] $PackageManager,
+    [switch] $EnableCorepack,
+    [switch] $NonInteractive,
+    [switch] $DryRunMode,
+    [string] $StrapRootPath
+  )
+
+  # Load config and registry
+  $config = Load-Config $StrapRootPath
+  $registry = Load-Registry $config
+
+  # Determine repo path
+  $repoPath = $null
+  $registryEntry = $null
+
+  if ($RepoNameOrPath) {
+    # Look up in registry
+    $registryEntry = $registry | Where-Object { $_.name -eq $RepoNameOrPath -or $_.id -eq $RepoNameOrPath }
+    if (-not $registryEntry) {
+      Die "Registry entry not found: '$RepoNameOrPath'. Use 'strap list' to see all entries."
+    }
+    $repoPath = $registryEntry.path
+    Info "Setting up registered repo: $RepoNameOrPath"
+    Info "Path: $repoPath"
+  } else {
+    # Use current directory
+    $repoPath = Get-Location
+    Info "Setting up current directory: $repoPath"
+
+    # Try to find matching registry entry
+    $registryEntry = $registry | Where-Object { $_.path -eq $repoPath }
+  }
+
+  # Safety validation: ensure path is within managed roots
+  $resolvedPath = [System.IO.Path]::GetFullPath($repoPath)
+  $softwareRoot = "P:\software"
+  $scriptsRoot = "P:\software\_scripts"
+
+  $withinSoftware = $resolvedPath.StartsWith($softwareRoot, [StringComparison]::OrdinalIgnoreCase)
+  $withinScripts = $resolvedPath.StartsWith($scriptsRoot, [StringComparison]::OrdinalIgnoreCase)
+
+  if (-not ($withinSoftware -or $withinScripts)) {
+    Die "Path is not within managed roots: $resolvedPath"
+  }
+
+  # Change to repo directory
+  Push-Location $resolvedPath
+
+  try {
+    # Stack detection
+    $detectedStacks = @()
+
+    if (Test-Path "pyproject.toml") { $detectedStacks += "python" }
+    elseif (Test-Path "requirements.txt") { $detectedStacks += "python" }
+
+    if (Test-Path "package.json") { $detectedStacks += "node" }
+    if (Test-Path "Cargo.toml") { $detectedStacks += "rust" }
+    if (Test-Path "go.mod") { $detectedStacks += "go" }
+
+    $dockerDetected = $false
+    if ((Test-Path "Dockerfile") -or (Test-Path "compose.yaml") -or (Test-Path "docker-compose.yml")) {
+      $dockerDetected = $true
+    }
+
+    # Determine stack to use
+    $stack = $null
+    if ($ForceStack) {
+      $stack = $ForceStack
+      Info "Forced stack: $stack"
+    } elseif ($detectedStacks.Count -eq 0) {
+      if ($dockerDetected) {
+        Write-Host ""
+        Write-Host "Docker detected; not auto-running containers (manual step)." -ForegroundColor Yellow
+        Pop-Location
+        exit 0
+      } else {
+        Die "No recognized stack detected. Use --stack to force selection."
+      }
+    } elseif ($detectedStacks.Count -gt 1) {
+      Write-Host ""
+      Write-Host "Multiple stacks detected: $($detectedStacks -join ', ')" -ForegroundColor Yellow
+      Write-Host "Use --stack <stack> to select one" -ForegroundColor Yellow
+      Pop-Location
+      exit 1
+    } else {
+      $stack = $detectedStacks[0]
+      Info "Detected stack: $stack"
+    }
+
+    if ($dockerDetected -and -not $ForceStack) {
+      Write-Host "  (Docker also detected; not auto-running)" -ForegroundColor Yellow
+    }
+
+    # Generate install plan
+    $plan = @()
+
+    switch ($stack) {
+      "python" {
+        # Defaults
+        $venvDir = if ($VenvPath) { $VenvPath } else { ".venv" }
+        $pythonCmd = if ($PythonExe) { $PythonExe } else { "python" }
+        $useUvFlag = if ($PSBoundParameters.ContainsKey('UseUv')) { $UseUv } else { $true }
+
+        $venvPython = Join-Path $venvDir "Scripts\python.exe"
+
+        # Step 1: Create venv if missing
+        if (-not (Test-Path $venvPython)) {
+          $plan += @{
+            Description = "Create Python virtual environment"
+            Command = "$pythonCmd -m venv $venvDir"
+          }
+        }
+
+        # Step 2: Install/upgrade pip and uv
+        if ($useUvFlag) {
+          $plan += @{
+            Description = "Install/upgrade pip and uv in venv"
+            Command = "$venvPython -m pip install -U pip uv"
+          }
+        } else {
+          $plan += @{
+            Description = "Install/upgrade pip in venv"
+            Command = "$venvPython -m pip install -U pip"
+          }
+        }
+
+        # Step 3: Install dependencies
+        if (Test-Path "pyproject.toml") {
+          if ($useUvFlag) {
+            $plan += @{
+              Description = "Install dependencies via uv sync"
+              Command = "$venvPython -m uv sync"
+            }
+          } else {
+            $plan += @{
+              Description = "Install dependencies via pip (editable)"
+              Command = "$venvPython -m pip install -e ."
+            }
+          }
+        } elseif (Test-Path "requirements.txt") {
+          if ($useUvFlag) {
+            $plan += @{
+              Description = "Install dependencies from requirements.txt via uv"
+              Command = "$venvPython -m uv pip install -r requirements.txt"
+            }
+          } else {
+            $plan += @{
+              Description = "Install dependencies from requirements.txt via pip"
+              Command = "$venvPython -m pip install -r requirements.txt"
+            }
+          }
+        }
+      }
+
+      "node" {
+        # Defaults
+        $enableCorepackFlag = if ($PSBoundParameters.ContainsKey('EnableCorepack')) { $EnableCorepack } else { $true }
+        $pm = $PackageManager
+
+        # Step 1: Enable corepack if requested
+        if ($enableCorepackFlag) {
+          $plan += @{
+            Description = "Enable corepack"
+            Command = "corepack enable"
+          }
+        }
+
+        # Step 2: Determine package manager and install
+        if (-not $pm) {
+          if (Test-Path "pnpm-lock.yaml") {
+            $pm = "pnpm"
+          } elseif (Test-Path "yarn.lock") {
+            $pm = "yarn"
+          } else {
+            $pm = "npm"
+          }
+        }
+
+        $plan += @{
+          Description = "Install Node dependencies via $pm"
+          Command = "$pm install"
+        }
+      }
+
+      "rust" {
+        $plan += @{
+          Description = "Build Rust project"
+          Command = "cargo build"
+        }
+      }
+
+      "go" {
+        $plan += @{
+          Description = "Download Go modules"
+          Command = "go mod download"
+        }
+      }
+
+      default {
+        Die "Unsupported stack: $stack"
+      }
+    }
+
+    # Print plan preview
+    Write-Host ""
+    Write-Host "=== SETUP PLAN ===" -ForegroundColor Cyan
+    Write-Host "Repo path:  $resolvedPath"
+    Write-Host "Stack:      $stack"
+    Write-Host ""
+    Write-Host "Commands to execute:" -ForegroundColor Cyan
+    for ($i = 0; $i -lt $plan.Count; $i++) {
+      Write-Host "  $($i + 1). $($plan[$i].Description)" -ForegroundColor Yellow
+      Write-Host "     $($plan[$i].Command)" -ForegroundColor Gray
+    }
+    Write-Host ""
+
+    if ($DryRunMode) {
+      Write-Host "DRY RUN - no changes will be made" -ForegroundColor Yellow
+      Pop-Location
+      exit 0
+    }
+
+    # Confirmation
+    if (-not $NonInteractive) {
+      $response = Read-Host "Proceed with setup? (y/n)"
+      if ($response -ne "y") {
+        Info "Aborted by user"
+        Pop-Location
+        exit 1
+      }
+    }
+
+    # Execute plan
+    Write-Host "=== EXECUTING ===" -ForegroundColor Cyan
+    foreach ($step in $plan) {
+      Info $step.Description
+      Write-Host "  > $($step.Command)" -ForegroundColor Gray
+
+      # Execute command
+      $output = Invoke-Expression $step.Command 2>&1
+      if ($LASTEXITCODE -ne 0) {
+        Write-Host ""
+        Write-Host "ERROR: Command failed with exit code $LASTEXITCODE" -ForegroundColor Red
+        Write-Host $output
+        Pop-Location
+        exit 2
+      }
+    }
+
+    Write-Host ""
+    Ok "Setup completed successfully"
+
+    # Update registry if entry exists
+    if ($registryEntry) {
+      Info "Updating registry metadata..."
+
+      # Find entry index
+      $entryIndex = -1
+      for ($i = 0; $i -lt $registry.Count; $i++) {
+        if ($registry[$i].id -eq $registryEntry.id) {
+          $entryIndex = $i
+          break
+        }
+      }
+
+      if ($entryIndex -ne -1) {
+        $currentEntry = $registry[$entryIndex]
+
+        # Update timestamp
+        $currentEntry.updated_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+        # Add/update setup metadata
+        if ($currentEntry.PSObject.Properties['stack_detected']) {
+          $currentEntry.stack_detected = $stack
+        } else {
+          $currentEntry | Add-Member -NotePropertyName 'stack_detected' -NotePropertyValue $stack -Force
+        }
+
+        if ($currentEntry.PSObject.Properties['setup_last_run_at']) {
+          $currentEntry.setup_last_run_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+        } else {
+          $currentEntry | Add-Member -NotePropertyName 'setup_last_run_at' -NotePropertyValue ((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")) -Force
+        }
+
+        if ($currentEntry.PSObject.Properties['setup_status']) {
+          $currentEntry.setup_status = "success"
+        } else {
+          $currentEntry | Add-Member -NotePropertyName 'setup_status' -NotePropertyValue "success" -Force
+        }
+
+        # Save registry
+        try {
+          Save-Registry $config $registry
+          Write-Host "  registry updated" -ForegroundColor Green
+        } catch {
+          Write-Host "  ERROR updating registry: $_" -ForegroundColor Red
+          Pop-Location
+          exit 3
+        }
+      }
+    }
+
+    Pop-Location
+    exit 0
+
+  } catch {
+    Write-Host ""
+    Write-Host "ERROR: $_" -ForegroundColor Red
+    Pop-Location
+    exit 2
+  }
+}
+

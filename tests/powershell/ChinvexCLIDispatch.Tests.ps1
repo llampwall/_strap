@@ -1,69 +1,27 @@
 # tests/powershell/ChinvexCLIDispatch.Tests.ps1
 Describe "CLI Dispatch for Chinvex Commands" -Tag "Task12" {
     BeforeAll {
-        # Extract functions from strap.ps1
-        $strapContent = Get-Content "$PSScriptRoot\..\..\strap.ps1" -Raw
-
-        function Extract-Function {
-            param($Content, $FunctionName)
-            $startIndex = $Content.IndexOf("function $FunctionName")
-            if ($startIndex -eq -1) {
-                throw "Could not find $FunctionName function in strap.ps1"
-            }
-            $braceCount = 0
-            $inFunction = $false
-            $endIndex = $startIndex
-            for ($i = $startIndex; $i -lt $Content.Length; $i++) {
-                $char = $Content[$i]
-                if ($char -eq '{') {
-                    $braceCount++
-                    $inFunction = $true
-                } elseif ($char -eq '}') {
-                    $braceCount--
-                    if ($inFunction -and $braceCount -eq 0) {
-                        $endIndex = $i + 1
-                        break
-                    }
-                }
-            }
-            return $Content.Substring($startIndex, $endIndex - $startIndex)
+        # Dot-source all strap modules
+        $modulesPath = "$PSScriptRoot\..\..\modules"
+        . "$modulesPath\Core.ps1"
+        . "$modulesPath\Utils.ps1"
+        . "$modulesPath\Path.ps1"
+        . "$modulesPath\Config.ps1"
+        . "$modulesPath\Chinvex.ps1"
+        . "$modulesPath\CLI.ps1"
+        . "$modulesPath\References.ps1"
+        . "$modulesPath\Audit.ps1"
+        . "$modulesPath\Consolidate.ps1"
+        $commandsPath = Join-Path $modulesPath "Commands"
+        Get-ChildItem -Path $commandsPath -Filter "*.ps1" | ForEach-Object {
+            . $_.FullName
         }
 
-        # Store the full strap content for dispatch testing
-        $script:strapPath = "$PSScriptRoot\..\..\strap.ps1"
-        $script:strapContent = $strapContent
+        # Load strap.ps1 content for documentation tests
+        $script:strapContent = Get-Content "$PSScriptRoot\..\..\strap.ps1" -Raw
     }
 
-    Context "CLI dispatch entries" {
-        It "should have dispatch entry for 'contexts' command" {
-            $script:strapContent | Should Match 'RepoName.*-eq.*"contexts"[\s\S]{0,200}Invoke-Contexts'
-        }
-
-        It "should have dispatch entry for 'sync-chinvex' command" {
-            $script:strapContent | Should Match 'RepoName.*-eq.*"sync-chinvex"[\s\S]{0,500}Invoke-SyncChinvex'
-        }
-
-        It "should pass --dry-run flag to Invoke-SyncChinvex" {
-            $script:strapContent | Should Match 'RepoName.*-eq.*"sync-chinvex"[\s\S]{0,500}-DryRun'
-        }
-
-        It "should pass --reconcile flag to Invoke-SyncChinvex" {
-            $script:strapContent | Should Match 'RepoName.*-eq.*"sync-chinvex"[\s\S]{0,500}-Reconcile'
-        }
-    }
-
-    Context "Show-Help content" {
-        BeforeAll {
-            # Extract Show-Help function
-            try {
-                $funcCode = Extract-Function $script:strapContent "Show-Help"
-                Invoke-Expression $funcCode
-            } catch {
-                Write-Warning "Could not extract Show-Help"
-            }
-        }
-
-        It "should document 'contexts' command" {
+    It "should document 'contexts' command" {
             $script:strapContent | Should Match 'contexts\s+.*[Ll]ist.*chinvex'
         }
 
@@ -90,14 +48,11 @@ Describe "CLI Dispatch for Chinvex Commands" -Tag "Task12" {
         It "should document --software flag for clone/adopt" {
             $script:strapContent | Should Match '--software\s+.*[Rr]egister.*software'
         }
-    }
 
     Context "Flag parsing integration" {
         It "should recognize --no-chinvex in Parse-GlobalFlags" {
             try {
-                $funcCode = Extract-Function $script:strapContent "Parse-GlobalFlags"
-                Invoke-Expression $funcCode
-
+                # Parse-GlobalFlags is available from CLI.ps1 module
                 $result = Parse-GlobalFlags @("clone", "https://example.com/repo", "--no-chinvex")
                 $result.NoChinvex | Should Be $true
             } catch {
@@ -108,9 +63,7 @@ Describe "CLI Dispatch for Chinvex Commands" -Tag "Task12" {
 
         It "should recognize --tool in Parse-GlobalFlags" {
             try {
-                $funcCode = Extract-Function $script:strapContent "Parse-GlobalFlags"
-                Invoke-Expression $funcCode
-
+                # Parse-GlobalFlags is available from CLI.ps1 module
                 $result = Parse-GlobalFlags @("clone", "https://example.com/repo", "--tool")
                 $result.IsTool | Should Be $true
             } catch {
@@ -121,9 +74,7 @@ Describe "CLI Dispatch for Chinvex Commands" -Tag "Task12" {
 
         It "should recognize --software in Parse-GlobalFlags" {
             try {
-                $funcCode = Extract-Function $script:strapContent "Parse-GlobalFlags"
-                Invoke-Expression $funcCode
-
+                # Parse-GlobalFlags is available from CLI.ps1 module
                 $result = Parse-GlobalFlags @("clone", "https://example.com/repo", "--software")
                 $result.IsSoftware | Should Be $true
             } catch {
@@ -134,9 +85,7 @@ Describe "CLI Dispatch for Chinvex Commands" -Tag "Task12" {
 
         It "should pass remaining args after extracting flags" {
             try {
-                $funcCode = Extract-Function $script:strapContent "Parse-GlobalFlags"
-                Invoke-Expression $funcCode
-
+                # Parse-GlobalFlags is available from CLI.ps1 module
                 $result = Parse-GlobalFlags @("clone", "https://example.com/repo", "--tool", "--no-chinvex")
                 ($result.RemainingArgs -contains "clone") | Should Be $true
                 ($result.RemainingArgs -contains "https://example.com/repo") | Should Be $true

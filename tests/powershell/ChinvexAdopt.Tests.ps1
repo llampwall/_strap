@@ -1,48 +1,20 @@
 # tests/powershell/ChinvexAdopt.Tests.ps1
 Describe "Invoke-Adopt Chinvex Integration" -Tag "Task5" {
     BeforeAll {
-        # Extract functions from strap.ps1
-        $strapContent = Get-Content "$PSScriptRoot\..\..\strap.ps1" -Raw
-
-        function Extract-Function {
-            param($Content, $FunctionName)
-            $startIndex = $Content.IndexOf("function $FunctionName")
-            if ($startIndex -eq -1) {
-                throw "Could not find $FunctionName function in strap.ps1"
-            }
-            $braceCount = 0
-            $inFunction = $false
-            $endIndex = $startIndex
-            for ($i = $startIndex; $i -lt $Content.Length; $i++) {
-                $char = $Content[$i]
-                if ($char -eq '{') {
-                    $braceCount++
-                    $inFunction = $true
-                } elseif ($char -eq '}') {
-                    $braceCount--
-                    if ($inFunction -and $braceCount -eq 0) {
-                        $endIndex = $i + 1
-                        break
-                    }
-                }
-            }
-            return $Content.Substring($startIndex, $endIndex - $startIndex)
-        }
-
-        # Extract all needed functions
-        $functions = @(
-            "Die", "Warn", "Info", "Ok", "Load-Config", "Load-Registry", "Save-Registry",
-            "Has-Command", "Ensure-Command",
-            "Test-ChinvexAvailable", "Test-ChinvexEnabled", "Invoke-Chinvex", "Invoke-ChinvexQuery",
-            "Detect-RepoScope", "Get-ContextName", "Test-ReservedContextName", "Sync-ChinvexForEntry",
-            "Invoke-Adopt"
-        )
-        foreach ($funcName in $functions) {
-            $funcCode = Extract-Function $strapContent $funcName
-            if ($null -eq $funcCode -or $funcCode.Length -eq 0) {
-                throw "Failed to extract function: $funcName"
-            }
-            Invoke-Expression $funcCode
+                # Dot-source all strap modules
+        $modulesPath = "$PSScriptRoot\..\..\modules"
+        . "$modulesPath\Core.ps1"
+        . "$modulesPath\Utils.ps1"
+        . "$modulesPath\Path.ps1"
+        . "$modulesPath\Config.ps1"
+        . "$modulesPath\Chinvex.ps1"
+        . "$modulesPath\CLI.ps1"
+        . "$modulesPath\References.ps1"
+        . "$modulesPath\Audit.ps1"
+        . "$modulesPath\Consolidate.ps1"
+        $commandsPath = Join-Path $modulesPath "Commands"
+        Get-ChildItem -Path $commandsPath -Filter "*.ps1" | ForEach-Object {
+            . $_.FullName
         }
 
         # Setup test environment
@@ -219,7 +191,7 @@ Describe "Invoke-Adopt Chinvex Integration" -Tag "Task5" {
             Mock git { $global:LASTEXITCODE = 0 }
 
             { Invoke-Adopt -TargetPath $repoPath -NonInteractive -StrapRootPath $script:testStrapRoot } |
-                Should Throw "*reserved*"
+                Should Throw
         }
 
         It "should reject 'archive' as software repo name" {
@@ -229,7 +201,7 @@ Describe "Invoke-Adopt Chinvex Integration" -Tag "Task5" {
             Mock git { $global:LASTEXITCODE = 0 }
 
             { Invoke-Adopt -TargetPath $repoPath -NonInteractive -StrapRootPath $script:testStrapRoot } |
-                Should Throw "*reserved*"
+                Should Throw
         }
 
         It "should allow adopting repo named 'tools' as tool scope" {

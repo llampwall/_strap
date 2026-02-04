@@ -1,37 +1,21 @@
 # tests/powershell/Get-ScheduledTaskReferences.Tests.ps1
 Describe "Get-ScheduledTaskReferences" {
     BeforeAll {
-        # Extract and source just the function from strap.ps1
-        $strapContent = Get-Content "$PSScriptRoot\..\..\strap.ps1" -Raw
-
-        # Find function start
-        $startIndex = $strapContent.IndexOf('function Get-ScheduledTaskReferences {')
-        if ($startIndex -eq -1) {
-            throw "Could not find Get-ScheduledTaskReferences function in strap.ps1"
+        # Dot-source all strap modules
+        $modulesPath = "$PSScriptRoot\..\..\modules"
+        . "$modulesPath\Core.ps1"
+        . "$modulesPath\Utils.ps1"
+        . "$modulesPath\Path.ps1"
+        . "$modulesPath\Config.ps1"
+        . "$modulesPath\Chinvex.ps1"
+        . "$modulesPath\CLI.ps1"
+        . "$modulesPath\References.ps1"
+        . "$modulesPath\Audit.ps1"
+        . "$modulesPath\Consolidate.ps1"
+        $commandsPath = Join-Path $modulesPath "Commands"
+        Get-ChildItem -Path $commandsPath -Filter "*.ps1" | ForEach-Object {
+            . $_.FullName
         }
-
-        # Find function end by counting braces
-        $braceCount = 0
-        $inFunction = $false
-        $endIndex = $startIndex
-
-        for ($i = $startIndex; $i -lt $strapContent.Length; $i++) {
-            $char = $strapContent[$i]
-            if ($char -eq '{') {
-                $braceCount++
-                $inFunction = $true
-            } elseif ($char -eq '}') {
-                $braceCount--
-                if ($inFunction -and $braceCount -eq 0) {
-                    $endIndex = $i + 1
-                    break
-                }
-            }
-        }
-
-        # Extract and execute function
-        $functionCode = $strapContent.Substring($startIndex, $endIndex - $startIndex)
-        Invoke-Expression $functionCode
 
         # Create test scheduled task
         $testTaskName = "StrapTest-MorningBrief"

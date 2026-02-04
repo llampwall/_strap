@@ -3,71 +3,24 @@
 
 Describe "Kill Switch" {
     BeforeAll {
-        # Read strap.ps1 and extract all function definitions
-        $strapPath = "$PSScriptRoot\..\..\strap.ps1"
-        $strapContent = Get-Content $strapPath -Raw
-
-        # Remove the param block and main script execution
-        # Keep only function definitions by finding functions and extracting them
-
-        # First, get the UNSAFE_COMMANDS array and Assert-CommandSafe
-        $killSwitchPattern = '(?s)\$UNSAFE_COMMANDS = @\([^)]+\)\s*function Assert-CommandSafe \{[^}]+\{[^}]+\}[^}]+\}'
-        if ($strapContent -match $killSwitchPattern) {
-            Invoke-Expression $Matches[0]
+        # Dot-source all strap modules (includes UNSAFE_COMMANDS and Assert-CommandSafe)
+        $modulesPath = "$PSScriptRoot\..\..\modules"
+        . "$modulesPath\Core.ps1"
+        . "$modulesPath\Utils.ps1"
+        . "$modulesPath\Path.ps1"
+        . "$modulesPath\Config.ps1"
+        . "$modulesPath\Chinvex.ps1"
+        . "$modulesPath\CLI.ps1"
+        . "$modulesPath\References.ps1"
+        . "$modulesPath\Audit.ps1"
+        . "$modulesPath\Consolidate.ps1"
+        $commandsPath = Join-Path $modulesPath "Commands"
+        Get-ChildItem -Path $commandsPath -Filter "*.ps1" | ForEach-Object {
+            . $_.FullName
         }
 
-        # Now extract each function we need to test
-        $functionsToExtract = @(
-            'Invoke-Snapshot',
-            'Invoke-Audit',
-            'Invoke-Migrate',
-            'Invoke-Migration-0-to-1',
-            'Should-ExcludePath',
-            'Copy-RepoSnapshot',
-            'Invoke-ConsolidateExecuteMove',
-            'Invoke-ConsolidateRollbackMove',
-            'Invoke-ConsolidateTransaction',
-            'Invoke-ConsolidateMigrationWorkflow',
-            'Test-ConsolidateArgs',
-            'Test-ConsolidateRegistryDisk',
-            'Test-ConsolidateEdgeCaseGuards'
-        )
-
-        foreach ($funcName in $functionsToExtract) {
-            # Find function start
-            $pattern = "function $funcName"
-            $startIndex = $strapContent.IndexOf($pattern)
-            if ($startIndex -eq -1) {
-                Write-Warning "Could not find function $funcName"
-                continue
-            }
-
-            # Find matching closing brace
-            $braceCount = 0
-            $inFunction = $false
-            $endIndex = $startIndex
-
-            for ($i = $startIndex; $i -lt $strapContent.Length; $i++) {
-                $char = $strapContent[$i]
-                if ($char -eq '{') {
-                    $braceCount++
-                    $inFunction = $true
-                } elseif ($char -eq '}') {
-                    $braceCount--
-                    if ($inFunction -and $braceCount -eq 0) {
-                        $endIndex = $i + 1
-                        break
-                    }
-                }
-            }
-
-            $funcCode = $strapContent.Substring($startIndex, $endIndex - $startIndex)
-            try {
-                Invoke-Expression $funcCode
-            } catch {
-                Write-Warning "Failed to load $funcName : $_"
-            }
-        }
+        # Source strap.ps1 to get the kill-switched functions
+        . "$PSScriptRoot\..\..\strap.ps1"
     }
 
     It "Invoke-Snapshot should be disabled" {

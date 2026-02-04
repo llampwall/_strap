@@ -1,5 +1,21 @@
 Describe "Detect-RepoScope" {
     BeforeAll {
+        # Dot-source all strap modules
+        $modulesPath = "$PSScriptRoot\..\..\modules"
+        . "$modulesPath\Core.ps1"
+        . "$modulesPath\Utils.ps1"
+        . "$modulesPath\Path.ps1"
+        . "$modulesPath\Config.ps1"
+        . "$modulesPath\Chinvex.ps1"
+        . "$modulesPath\CLI.ps1"
+        . "$modulesPath\References.ps1"
+        . "$modulesPath\Audit.ps1"
+        . "$modulesPath\Consolidate.ps1"
+        $commandsPath = Join-Path $modulesPath "Commands"
+        Get-ChildItem -Path $commandsPath -Filter "*.ps1" | ForEach-Object {
+            . $_.FullName
+        }
+
         # Setup test config
         $script:testStrapRoot = Join-Path $TestDrive "straproot"
         New-Item -ItemType Directory -Path $script:testStrapRoot -Force | Out-Null
@@ -10,84 +26,6 @@ Describe "Detect-RepoScope" {
             software_root = "P:\software"
             tools_root = "P:\software\_scripts"
         } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $script:testStrapRoot "config.json")
-
-        # Helper functions
-        function Load-Config {
-            param([string] $StrapRoot)
-            $configPath = Join-Path $StrapRoot "config.json"
-            $config = Get-Content $configPath -Raw | ConvertFrom-Json
-            return $config
-        }
-
-        # The functions being tested (from strap.ps1)
-        function Detect-RepoScope {
-            param(
-                [Parameter(Mandatory)]
-                [string] $Path,
-                [Parameter(Mandatory)]
-                [string] $StrapRootPath
-            )
-
-            $config = Load-Config $StrapRootPath
-
-            # Normalize paths for comparison (ensure trailing backslash for prefix matching)
-            $normalPath = [System.IO.Path]::GetFullPath($Path).TrimEnd('\') + '\'
-            $toolsRoot = [System.IO.Path]::GetFullPath($config.tools_root).TrimEnd('\') + '\'
-            $softwareRoot = [System.IO.Path]::GetFullPath($config.software_root).TrimEnd('\') + '\'
-
-            # Check tools_root first (more specific - it's a subdirectory of software_root)
-            if ($normalPath.StartsWith($toolsRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-                return 'tool'
-            }
-
-            # Then check software_root
-            if ($normalPath.StartsWith($softwareRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-                return 'software'
-            }
-
-            return $null
-        }
-
-        function Get-ContextName {
-            param(
-                [Parameter(Mandatory)]
-                [ValidateSet('tool', 'software')]
-                [string] $Scope,
-                [Parameter(Mandatory)]
-                [string] $Name
-            )
-
-            if ($Scope -eq 'tool') {
-                return 'tools'
-            }
-            return $Name
-        }
-
-        function Test-ReservedContextName {
-            param(
-                [Parameter(Mandatory)]
-                [string] $Name,
-                [Parameter(Mandatory)]
-                [ValidateSet('tool', 'software')]
-                [string] $Scope
-            )
-
-            # Reserved names only matter for software scope
-            if ($Scope -ne 'software') {
-                return $false
-            }
-
-            $reserved = @('tools', 'archive')
-            return ($reserved -contains $Name.ToLower())
-        }
-
-        function Warn([string] $msg) {
-            Write-Warning $msg
-        }
-
-        function Info([string] $msg) {
-            Write-Host $msg
-        }
 
         function Invoke-Chinvex {
             param([string[]] $Arguments)

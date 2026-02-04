@@ -1,6 +1,22 @@
 # tests/powershell/ChinvexDocs.Tests.ps1
 Describe "Chinvex Integration Documentation" -Tag "Task14" {
     BeforeAll {
+        # Dot-source all strap modules
+        $modulesPath = "$PSScriptRoot\..\..\modules"
+        . "$modulesPath\Core.ps1"
+        . "$modulesPath\Utils.ps1"
+        . "$modulesPath\Path.ps1"
+        . "$modulesPath\Config.ps1"
+        . "$modulesPath\Chinvex.ps1"
+        . "$modulesPath\CLI.ps1"
+        . "$modulesPath\References.ps1"
+        . "$modulesPath\Audit.ps1"
+        . "$modulesPath\Consolidate.ps1"
+        $commandsPath = Join-Path $modulesPath "Commands"
+        Get-ChildItem -Path $commandsPath -Filter "*.ps1" | ForEach-Object {
+            . $_.FullName
+        }
+
         $script:docsRoot = "$PSScriptRoot\..\..\docs"
         $script:projectRoot = "$PSScriptRoot\..\.."
     }

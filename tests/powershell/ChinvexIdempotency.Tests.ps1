@@ -1,49 +1,20 @@
 # tests/powershell/ChinvexIdempotency.Tests.ps1
 Describe "Chinvex Idempotency and Error Paths" -Tag "Task13" {
     BeforeAll {
-        # Extract functions from strap.ps1
-        $strapContent = Get-Content "$PSScriptRoot\..\..\strap.ps1" -Raw
-
-        function Extract-Function {
-            param($Content, $FunctionName)
-            $startIndex = $Content.IndexOf("function $FunctionName")
-            if ($startIndex -eq -1) {
-                throw "Could not find $FunctionName function in strap.ps1"
-            }
-            $braceCount = 0
-            $inFunction = $false
-            $endIndex = $startIndex
-            for ($i = $startIndex; $i -lt $Content.Length; $i++) {
-                $char = $Content[$i]
-                if ($char -eq '{') {
-                    $braceCount++
-                    $inFunction = $true
-                } elseif ($char -eq '}') {
-                    $braceCount--
-                    if ($inFunction -and $braceCount -eq 0) {
-                        $endIndex = $i + 1
-                        break
-                    }
-                }
-            }
-            return $Content.Substring($startIndex, $endIndex - $startIndex)
-        }
-
-        # Extract all needed functions
-        $functions = @(
-            "Die", "Warn", "Info", "Ok", "Load-Config", "Load-Registry", "Save-Registry",
-            "Test-ChinvexAvailable", "Test-ChinvexEnabled", "Invoke-Chinvex", "Invoke-ChinvexQuery",
-            "Detect-RepoScope", "Get-ContextName", "Test-ReservedContextName", "Sync-ChinvexForEntry",
-            "Invoke-Clone", "Invoke-Adopt", "Invoke-Move", "Invoke-Rename", "Invoke-Uninstall",
-            "Invoke-SyncChinvex", "Parse-GitUrl"
-        )
-        foreach ($funcName in $functions) {
-            try {
-                $funcCode = Extract-Function $strapContent $funcName
-                Invoke-Expression $funcCode
-            } catch {
-                # Function may not exist
-            }
+                # Dot-source all strap modules
+        $modulesPath = "$PSScriptRoot\..\..\modules"
+        . "$modulesPath\Core.ps1"
+        . "$modulesPath\Utils.ps1"
+        . "$modulesPath\Path.ps1"
+        . "$modulesPath\Config.ps1"
+        . "$modulesPath\Chinvex.ps1"
+        . "$modulesPath\CLI.ps1"
+        . "$modulesPath\References.ps1"
+        . "$modulesPath\Audit.ps1"
+        . "$modulesPath\Consolidate.ps1"
+        $commandsPath = Join-Path $modulesPath "Commands"
+        Get-ChildItem -Path $commandsPath -Filter "*.ps1" | ForEach-Object {
+            . $_.FullName
         }
 
         # Setup test environment

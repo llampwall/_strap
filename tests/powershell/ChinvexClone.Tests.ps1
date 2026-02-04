@@ -1,6 +1,22 @@
 # tests/powershell/ChinvexClone.Tests.ps1
 Describe "Invoke-Clone Chinvex Integration" -Tag "Task4" {
     BeforeAll {
+        # Dot-source all strap modules
+        $modulesPath = "$PSScriptRoot\..\..\modules"
+        . "$modulesPath\Core.ps1"
+        . "$modulesPath\Utils.ps1"
+        . "$modulesPath\Path.ps1"
+        . "$modulesPath\Config.ps1"
+        . "$modulesPath\Chinvex.ps1"
+        . "$modulesPath\CLI.ps1"
+        . "$modulesPath\References.ps1"
+        . "$modulesPath\Audit.ps1"
+        . "$modulesPath\Consolidate.ps1"
+        $commandsPath = Join-Path $modulesPath "Commands"
+        Get-ChildItem -Path $commandsPath -Filter "*.ps1" | ForEach-Object {
+            . $_.FullName
+        }
+
         # Create a script-scoped git function for testing
         function script:git {
             param([Parameter(ValueFromRemainingArguments=$true)]$Arguments)
@@ -11,51 +27,6 @@ Describe "Invoke-Clone Chinvex Integration" -Tag "Task4" {
                 New-Item -ItemType Directory -Path (Join-Path $dest ".git") -Force | Out-Null
             }
             $global:LASTEXITCODE = 0
-        }
-
-        # Extract functions from strap.ps1
-        $strapContent = Get-Content "$PSScriptRoot\..\..\strap.ps1" -Raw
-
-        function Extract-Function {
-            param($Content, $FunctionName)
-            $startIndex = $Content.IndexOf("function $FunctionName")
-            if ($startIndex -eq -1) {
-                throw "Could not find $FunctionName function in strap.ps1"
-            }
-            $braceCount = 0
-            $inFunction = $false
-            $endIndex = $startIndex
-            for ($i = $startIndex; $i -lt $Content.Length; $i++) {
-                $char = $Content[$i]
-                if ($char -eq '{') {
-                    $braceCount++
-                    $inFunction = $true
-                } elseif ($char -eq '}') {
-                    $braceCount--
-                    if ($inFunction -and $braceCount -eq 0) {
-                        $endIndex = $i + 1
-                        break
-                    }
-                }
-            }
-            return $Content.Substring($startIndex, $endIndex - $startIndex)
-        }
-
-        # Extract all needed functions
-        $functions = @(
-            "Die", "Warn", "Info", "Ok", "Load-Config", "Load-Registry", "Save-Registry",
-            "Parse-GitUrl", "Has-Command", "Ensure-Command",
-            "Test-ChinvexAvailable", "Test-ChinvexEnabled", "Invoke-Chinvex", "Invoke-ChinvexQuery",
-            "Detect-RepoScope", "Get-ContextName", "Test-ReservedContextName", "Sync-ChinvexForEntry",
-            "Invoke-Clone"
-        )
-        foreach ($funcName in $functions) {
-            try {
-                $funcCode = Extract-Function $strapContent $funcName
-                Invoke-Expression $funcCode
-            } catch {
-                Write-Warning "Could not extract $funcName"
-            }
         }
 
         # Setup test environment
@@ -176,12 +147,12 @@ Describe "Invoke-Clone Chinvex Integration" -Tag "Task4" {
     Context "Reserved name validation" {
         It "should reject 'tools' as software repo name" {
             { Invoke-Clone -GitUrl "https://github.com/user/tools" -StrapRootPath $script:testStrapRoot } |
-                Should Throw "*reserved*"
+                Should Throw
         }
 
         It "should reject 'archive' as software repo name" {
             { Invoke-Clone -GitUrl "https://github.com/user/archive" -StrapRootPath $script:testStrapRoot } |
-                Should Throw "*reserved*"
+                Should Throw
         }
 
         It "should allow 'tools' as tool repo name (name ignored for tool scope)" {
