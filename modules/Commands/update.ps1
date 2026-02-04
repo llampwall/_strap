@@ -28,10 +28,10 @@ function Invoke-Update {
   $entriesToUpdate = @()
 
   if ($UpdateAll) {
-    # Filter by scope if requested
+    # Filter by tags if requested (legacy support)
     $entriesToUpdate = $registry | Where-Object {
-      if ($FilterTool -and $_.scope -ne "tool") { return $false }
-      if ($FilterSoftware -and $_.scope -ne "software") { return $false }
+      if ($FilterTool -and (-not ($_.tags -contains "third-party"))) { return $false }
+      if ($FilterSoftware -and ($_.tags -contains "third-party")) { return $false }
       return $true
     }
 
@@ -62,10 +62,10 @@ function Invoke-Update {
   foreach ($entry in $entriesToUpdate) {
     $entryName = $entry.name
     $entryPath = $entry.path
-    $entryScope = if ($entry.scope) { $entry.scope } else { "unknown" }
+    $entryStatus = if ($entry.status) { $entry.status } else { "unknown" }
 
     Write-Host ""
-    Write-Host "=== UPDATE: $entryName ($entryScope) ===" -ForegroundColor Cyan
+    Write-Host "=== UPDATE: $entryName ($entryStatus) ===" -ForegroundColor Cyan
 
     # Safety validation: ensure path is absolute and within managed roots
     if (-not [System.IO.Path]::IsPathRooted($entryPath)) {

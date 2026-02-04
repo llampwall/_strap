@@ -82,7 +82,7 @@ function Invoke-Uninstall {
   # Preview
   Write-Host ""
   Write-Host "=== UNINSTALL PREVIEW ===" -ForegroundColor Cyan
-  Write-Host "Entry:  $($entry.name) ($($entry.scope))"
+  Write-Host "Entry:  $($entry.name)"
   if ($entry.url) {
     Write-Host "URL:    $($entry.url)"
   }
@@ -135,22 +135,12 @@ function Invoke-Uninstall {
 
   # Chinvex cleanup (BEFORE removing shims/folder/registry)
   if (Test-ChinvexEnabled -NoChinvex:$NoChinvex -StrapRootPath $StrapRootPath) {
-    if ($entry.scope -eq 'software' -and $entry.chinvex_context) {
-      # Archive the individual context
-      $archived = Invoke-Chinvex -Arguments @("context", "archive", $entry.chinvex_context)
-      if ($archived) {
-        Info "Chinvex: archived context '$($entry.chinvex_context)'"
+    if ($entry.chinvex_context) {
+      $deleted = Invoke-Chinvex -Arguments @("context", "delete", $entry.chinvex_context, "--force")
+      if ($deleted) {
+        Info "Chinvex: deleted context '$($entry.chinvex_context)'"
       } else {
-        Warn "Chinvex: failed to archive context '$($entry.chinvex_context)' (continuing with uninstall)"
-      }
-    }
-    elseif ($entry.scope -eq 'tool' -and $entry.chinvex_context) {
-      # Remove repo from tools context (never archive tools context itself)
-      $removed = Invoke-Chinvex -Arguments @("context", "remove-repo", "tools", "--repo", $repoPath)
-      if ($removed) {
-        Info "Chinvex: removed '$repoPath' from tools context"
-      } else {
-        Warn "Chinvex: failed to remove repo from tools context (continuing with uninstall)"
+        Warn "Chinvex: failed to delete context '$($entry.chinvex_context)' (continuing with uninstall)"
       }
     }
   }

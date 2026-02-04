@@ -21,21 +21,16 @@ function Invoke-Clone {
   # Parse repo name from URL
   $repoName = if ($CustomName) { $CustomName } else { Parse-GitUrl $GitUrl }
 
-  # Determine scope
-  $scope = if ($IsTool) { "tool" } else { "software" }
-
   # Reserved name check (before any filesystem changes)
-  if (Test-ReservedContextName -Name $repoName -Scope $scope) {
-    Die "Cannot use reserved name '$repoName' for software repos. Reserved names: tools, archive"
+  if (Test-ReservedContextName -Name $repoName) {
+    Die "Cannot use reserved name '$repoName'. Reserved names: tools, archive, strap"
   }
 
-  # Determine destination
+  # All repos go to software root
   $destPath = if ($DestPath) {
     $DestPath
-  } elseif ($IsTool) {
-    Join-Path $config.roots.tools $repoName
   } else {
-    Join-Path $config.roots.software $repoName
+    Join-Path $config.software_root $repoName
   }
 
   # Check if destination already exists
@@ -65,14 +60,27 @@ function Invoke-Clone {
   # Resolve to absolute path for registry
   $absolutePath = (Resolve-Path -LiteralPath $destPath).Path
 
-  # Create new entry with ID and chinvex fields
+  # Determine preset
+  if ($IsTool) {
+    $depth = 'light'
+    $status = 'stable'
+    $tags = @('third-party')
+  } else {
+    $depth = 'full'
+    $status = 'active'
+    $tags = @()
+  }
+
+  # Create new entry with V3 metadata fields
   $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
   $entry = [PSCustomObject]@{
     id              = $repoName
     name            = $repoName
     url             = $GitUrl
     path            = $absolutePath
-    scope           = $scope
+    chinvex_depth   = $depth
+    status          = $status
+    tags            = $tags
     chinvex_context = $null  # Default, updated below if sync succeeds
     shims           = @()
     stack           = @()
@@ -90,7 +98,8 @@ function Invoke-Clone {
 
   # Chinvex sync (after registry write)
   if (Test-ChinvexEnabled -NoChinvex:$NoChinvex -StrapRootPath $StrapRootPath) {
-    $contextName = Sync-ChinvexForEntry -Scope $scope -Name $repoName -RepoPath $absolutePath
+    $contextName = Sync-ChinvexForEntry -Name $repoName -RepoPath $absolutePath `
+        -ChinvexDepth $entry.chinvex_depth -Status $entry.status -Tags $entry.tags
     if ($contextName) {
       # Update entry with successful chinvex context
       $entry.chinvex_context = $contextName

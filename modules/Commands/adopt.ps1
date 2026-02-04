@@ -25,15 +25,11 @@ function Invoke-Adopt {
   # Resolve to absolute path
   $resolvedPath = [System.IO.Path]::GetFullPath($TargetPath)
 
-  # Validate within managed roots
-  $softwareRoot = $config.roots.software
-  $toolsRoot = $config.roots.tools
-
+  # Validate within managed root
+  $softwareRoot = $config.software_root
   $withinSoftware = $resolvedPath.StartsWith($softwareRoot, [StringComparison]::OrdinalIgnoreCase)
-  $withinTools = $resolvedPath.StartsWith($toolsRoot, [StringComparison]::OrdinalIgnoreCase)
-
-  if (-not ($withinSoftware -or $withinTools)) {
-    Die "Path is not within managed roots: $resolvedPath"
+  if (-not $withinSoftware) {
+    Die "Path is not within managed root: $resolvedPath"
   }
 
   # Validate it's a git repo
@@ -59,26 +55,26 @@ function Invoke-Adopt {
     Die "Entry with name '$name' already exists in registry at $($existing.path)"
   }
 
-  # Determine scope (explicit flag > auto-detect from path)
-  $scope = if ($ForceTool) {
-    "tool"
+  # Determine preset
+  if ($ForceTool) {
+    $depth = 'light'
+    $status = 'stable'
+    $tags = @('third-party')
   } elseif ($ForceSoftware) {
-    "software"
+    $depth = 'full'
+    $status = 'active'
+    $tags = @()
   } else {
-    # Auto-detect from path
-    $detectedScope = Detect-RepoScope -Path $resolvedPath -StrapRootPath $StrapRootPath
-    if ($null -eq $detectedScope) {
-      Warn "Path is outside managed roots. Defaulting to 'software'. Use --tool or --software to override."
-      "software"
-    } else {
-      Info "Auto-detected scope: $detectedScope (from path)"
-      $detectedScope
-    }
+    # Default preset
+    $depth = 'full'
+    $status = 'active'
+    $tags = @()
+    Info "Using default preset: depth=full, status=active"
   }
 
-  # Reserved name check (before any filesystem changes)
-  if (Test-ReservedContextName -Name $name -Scope $scope) {
-    Die "Cannot use reserved name '$name' for software repos. Reserved names: tools, archive"
+  # Reserved name check
+  if (Test-ReservedContextName -Name $name) {
+    Die "Cannot use reserved name '$name'. Reserved names: tools, archive, strap"
   }
 
   # Extract git metadata (best-effort)
@@ -124,7 +120,9 @@ function Invoke-Adopt {
   if ($DryRunMode) {
     Info "[DRY RUN] Would adopt: $resolvedPath"
     Info "[DRY RUN] Name: $name"
-    Info "[DRY RUN] Scope: $scope"
+    Info "[DRY RUN] Depth: $depth"
+    Info "[DRY RUN] Status: $status"
+    Info "[DRY RUN] Tags: $($tags -join ', ')"
     Info "[DRY RUN] URL: $url"
     Info "[DRY RUN] Stack: $stackDetected"
     return
@@ -137,7 +135,9 @@ function Invoke-Adopt {
     name            = $name
     url             = $url
     path            = $resolvedPath
-    scope           = $scope
+    chinvex_depth   = $depth
+    status          = $status
+    tags            = $tags
     chinvex_context = $null  # Default, updated below if sync succeeds
     shims           = @()
     stack           = if ($stackDetected) { @($stackDetected) } else { @() }
@@ -157,7 +157,8 @@ function Invoke-Adopt {
 
   # Chinvex sync (after registry write)
   if (Test-ChinvexEnabled -NoChinvex:$NoChinvex -StrapRootPath $StrapRootPath) {
-    $contextName = Sync-ChinvexForEntry -Scope $scope -Name $name -RepoPath $resolvedPath
+    $contextName = Sync-ChinvexForEntry -Name $name -RepoPath $resolvedPath `
+        -ChinvexDepth $entry.chinvex_depth -Status $entry.status -Tags $entry.tags
     if ($contextName) {
       # Update entry with successful chinvex context
       $entry.chinvex_context = $contextName
@@ -174,7 +175,7 @@ function Invoke-Adopt {
   }
 
   Ok "Adopted: $name ($resolvedPath)"
-  Info "Scope: $scope"
+  Info "Depth: $depth, Status: $status, Tags: $($tags -join ', ')"
   if ($url) { Info "Remote: $url" }
   if ($stackDetected) { Info "Stack: $stackDetected" }
 }

@@ -5,7 +5,7 @@
 . "$PSScriptRoot\Core.ps1"
 
 # Registry version constant
-$script:LATEST_REGISTRY_VERSION = 2
+$script:LATEST_REGISTRY_VERSION = 3
 
 function Load-Config($strapRoot) {
   $configPath = Join-Path $strapRoot "config.json"
@@ -24,9 +24,6 @@ function Load-Config($strapRoot) {
   if ($null -eq $json.software_root) {
     $json | Add-Member -NotePropertyName software_root -NotePropertyValue "P:\software" -Force
   }
-  if ($null -eq $json.tools_root) {
-    $json | Add-Member -NotePropertyName tools_root -NotePropertyValue "P:\software\_scripts" -Force
-  }
 
   # Apply defaults for shims and nodeTools roots
   if (-not $json.roots.shims) {
@@ -34,9 +31,6 @@ function Load-Config($strapRoot) {
   }
   if (-not $json.roots.nodeTools) {
     $json.roots | Add-Member -NotePropertyName nodeTools -NotePropertyValue "P:\software\_node-tools" -Force
-  }
-  if (-not $json.roots.archive) {
-    $json.roots | Add-Member -NotePropertyName archive -NotePropertyValue "P:\software\_archive" -Force
   }
 
   # Apply defaults for pwshExe and nodeExe
@@ -80,6 +74,43 @@ function Load-Registry($configObj) {
 
   # V2 format
   if ($json.repos) {
+    # V2→V3 migration
+    if ($json.version -eq 2) {
+      foreach ($entry in $json.repos) {
+        # Determine new field values based on old scope
+        $depth = 'full'
+        $status = 'active'
+        $tags = @()
+
+        if ($entry.scope -eq 'archive') {
+          $depth = 'index'
+          $status = 'dormant'
+        }
+        elseif ($entry.scope -eq 'tool') {
+          $depth = 'light'
+          $status = 'stable'
+          $tags = @('third-party')
+        }
+
+        # Add new fields if missing
+        if (-not $entry.PSObject.Properties['chinvex_depth']) {
+          $entry | Add-Member -NotePropertyName chinvex_depth -NotePropertyValue $depth -Force
+        }
+        if (-not $entry.PSObject.Properties['status']) {
+          $entry | Add-Member -NotePropertyName status -NotePropertyValue $status -Force
+        }
+        if (-not $entry.PSObject.Properties['tags']) {
+          $entry | Add-Member -NotePropertyName tags -NotePropertyValue $tags -Force
+        }
+
+        # Remove scope field
+        $entry.PSObject.Properties.Remove('scope')
+      }
+      # Auto-save migrated registry
+      $json.version = 3
+      Save-Registry $configObj $json.repos
+    }
+
     # Force array output using comma operator (prevents PS from unwrapping single-element arrays)
     return ,@($json.repos | ForEach-Object { $_ })
   }
@@ -157,8 +188,17 @@ function Validate-RegistrySchema {
     if (-not $entry.PSObject.Properties['id'] -or -not $entry.id) {
       $issues += "Entry ${idx}: missing required field 'id'"
     }
-    if (-not $entry.PSObject.Properties['scope'] -or $entry.scope -notin @('tool', 'software')) {
-      $issues += "Entry ${idx}: missing or invalid 'scope' (must be 'tool' or 'software')"
+    # V3 metadata fields
+    if (-not $entry.PSObject.Properties['chinvex_depth'] -or
+        $entry.chinvex_depth -notin @('full', 'light', 'index')) {
+      $issues += "Entry ${idx}: missing or invalid 'chinvex_depth' (must be 'full', 'light', or 'index')"
+    }
+    if (-not $entry.PSObject.Properties['status'] -or
+        $entry.status -notin @('active', 'stable', 'dormant')) {
+      $issues += "Entry ${idx}: missing or invalid 'status' (must be 'active', 'stable', or 'dormant')"
+    }
+    if (-not $entry.PSObject.Properties['tags']) {
+      $issues += "Entry ${idx}: missing required field 'tags' (must be array)"
     }
     if (-not $entry.PSObject.Properties['path'] -or -not $entry.path) {
       $issues += "Entry ${idx}: missing required field 'path'"

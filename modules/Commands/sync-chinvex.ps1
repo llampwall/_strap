@@ -89,21 +89,24 @@ function Invoke-SyncChinvex {
     # Phase 1: Find registry entries that need syncing
     foreach ($entry in $registry) {
         if ($null -eq $entry.chinvex_context) {
-            # Entry needs context created
-            $contextName = Get-ContextName -Scope $entry.scope -Name $entry.name
+            # Entry needs context created (individual context = entry name)
+            $contextName = $entry.name
 
             $action = @{
                 Action = "create"
                 Context = $contextName
                 EntryName = $entry.name
-                Scope = $entry.scope
+                Depth = $entry.chinvex_depth
+                Status = $entry.status
+                Tags = $entry.tags
                 RepoPath = $entry.path
             }
             $result.Actions += [PSCustomObject]$action
 
             if (-not $isDryRun) {
                 # Perform reconciliation
-                $syncedContext = Sync-ChinvexForEntry -Scope $entry.scope -Name $entry.name -RepoPath $entry.path
+                $syncedContext = Sync-ChinvexForEntry -Name $entry.name -RepoPath $entry.path `
+                    -ChinvexDepth $entry.chinvex_depth -Status $entry.status -Tags $entry.tags
                 if ($syncedContext) {
                     $entry.chinvex_context = $syncedContext
                     Ok "Created context '$contextName' for $($entry.name)"

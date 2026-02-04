@@ -89,7 +89,7 @@ function Invoke-Move {
   # Plan preview
   Write-Host ""
   Write-Host "=== MOVE PLAN ===" -ForegroundColor Cyan
-  Write-Host "Entry: $NameToMove ($($entry.scope))"
+  Write-Host "Entry: $NameToMove"
   Write-Host "FROM:  $oldPath"
   Write-Host "TO:    $newPath"
   if ($RehomeShims -and $entry.shims -and $entry.shims.Count -gt 0) {
@@ -123,21 +123,9 @@ function Invoke-Move {
   $entry.path = $newPath
   $entry.updated_at = Get-Date -Format "o"
 
-  # Optional: update scope if moved between roots
-  $oldScope = $entry.scope
-  $newScope = $oldScope
-  if ($newPath.StartsWith($softwareRoot, [StringComparison]::OrdinalIgnoreCase)) {
-    $newScope = "software"
-    $entry.scope = "software"
-  } elseif ($newPath.StartsWith($toolsRoot, [StringComparison]::OrdinalIgnoreCase)) {
-    $newScope = "tool"
-    $entry.scope = "tool"
-  }
-
   # Chinvex integration: update context after move
   if (Test-ChinvexEnabled -NoChinvex:$NoChinvex -StrapRootPath $StrapRootPath) {
     $oldChinvexContext = $entry.chinvex_context
-    $scopeChanged = $oldScope -ne $newScope
 
     if ($scopeChanged) {
       # Scope changed - need to handle context migration

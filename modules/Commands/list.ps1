@@ -13,13 +13,15 @@ function Invoke-List {
   $config = Load-Config $StrapRootPath
   $registry = Load-Registry $config
 
-  # Apply filters
+  # Apply filters (legacy support)
   $filtered = $registry
   if ($FilterTool) {
-    $filtered = $filtered | Where-Object { $_.scope -eq "tool" }
+    # Legacy: filter by third-party tag
+    $filtered = $filtered | Where-Object { $_.tags -contains "third-party" }
   }
   if ($FilterSoftware) {
-    $filtered = $filtered | Where-Object { $_.scope -eq "software" }
+    # Legacy: filter by NOT third-party
+    $filtered = $filtered | Where-Object { $_.tags -notcontains "third-party" }
   }
 
   # Output
@@ -34,17 +36,17 @@ function Invoke-List {
 
     # Format as table
     Write-Host ""
-    Write-Host ("NAME" + (" " * 20) + "SCOPE" + (" " * 5) + "PATH" + (" " * 40) + "URL" + (" " * 40) + "UPDATED")
+    Write-Host ("NAME" + (" " * 20) + "STATUS" + (" " * 5) + "DEPTH" + (" " * 3) + "PATH" + (" " * 30) + "UPDATED")
     Write-Host ("-" * 150)
 
     foreach ($entry in $filtered) {
       $name = if ($entry.name.Length -gt 20) { $entry.name.Substring(0, 17) + "..." } else { $entry.name.PadRight(24) }
-      $scope = $entry.scope.PadRight(10)
-      $path = if ($entry.path.Length -gt 40) { "..." + $entry.path.Substring($entry.path.Length - 37) } else { $entry.path.PadRight(44) }
-      $url = if ($entry.url.Length -gt 40) { $entry.url.Substring(0, 37) + "..." } else { $entry.url.PadRight(44) }
+      $status = if ($entry.status) { $entry.status.PadRight(11) } else { "N/A".PadRight(11) }
+      $depth = if ($entry.chinvex_depth) { $entry.chinvex_depth.PadRight(8) } else { "N/A".PadRight(8) }
+      $path = if ($entry.path.Length -gt 35) { "..." + $entry.path.Substring($entry.path.Length - 32) } else { $entry.path.PadRight(34) }
       $updated = if ($entry.updated_at) { $entry.updated_at } else { "N/A" }
 
-      Write-Host "$name$scope$path$url$updated"
+      Write-Host "$name$status$depth$path$updated"
     }
     Write-Host ""
     Write-Host "Total: $($filtered.Count) entries"

@@ -53,18 +53,8 @@ function Invoke-Contexts {
     # Track which chinvex contexts are accounted for by registry
     $accountedContexts = @{}
 
-    # Track tools context separately (aggregate tool repos)
-    $toolRepoCount = 0
-
-    # Process registry entries
+    # Process registry entries (all have individual contexts now)
     foreach ($entry in $registry) {
-        if ($entry.scope -eq 'tool') {
-            $toolRepoCount++
-            $accountedContexts['tools'] = $true
-            continue  # Don't add individual tool entries
-        }
-
-        # Software entry
         $contextName = $entry.chinvex_context
         $syncStatus = "unknown"
 
@@ -81,33 +71,14 @@ function Invoke-Contexts {
 
         $chinvexData = if ($contextName) { $chinvexLookup[$contextName] } else { $null }
 
+        # Determine type from tags (third-party = tool, otherwise software)
+        $type = if ($entry.tags -contains "third-party") { "tool" } else { "software" }
+
         $results += [PSCustomObject]@{
             Name = $entry.name
-            Type = "software"
+            Type = $type
             RepoCount = if ($chinvexData) { $chinvexData.repo_count } else { 1 }
             LastIngest = if ($chinvexData) { $chinvexData.last_ingest } else { "-" }
-            SyncStatus = $syncStatus
-        }
-    }
-
-    # Add tools context if there are tool repos
-    if ($toolRepoCount -gt 0) {
-        $toolsCtx = $chinvexLookup['tools']
-        $syncStatus = "unknown"
-
-        if (-not $chinvexAvail) {
-            $syncStatus = "unknown (chinvex unavailable)"
-        } elseif ($toolsCtx) {
-            $syncStatus = "synced"
-        } else {
-            $syncStatus = "context missing"
-        }
-
-        $results += [PSCustomObject]@{
-            Name = "tools"
-            Type = "tool"
-            RepoCount = $toolRepoCount
-            LastIngest = if ($toolsCtx) { $toolsCtx.last_ingest } else { "-" }
             SyncStatus = $syncStatus
         }
     }

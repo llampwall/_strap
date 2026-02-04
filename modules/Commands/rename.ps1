@@ -128,12 +128,12 @@ function Invoke-Rename {
 
   # Chinvex integration
   if (Test-ChinvexEnabled -NoChinvex:$NoChinvex -StrapRootPath $StrapRootPath) {
-    if ($entry.scope -eq 'software' -and $oldChinvexContext) {
+    if ($oldChinvexContext) {
       # Rename the chinvex context
-      $renamed = Invoke-Chinvex -Arguments @("context", "rename", $oldName, "--to", $NewName)
+      $renamed = Invoke-Chinvex -Arguments @("context", "rename", $oldChinvexContext, $NewName)
       if ($renamed) {
         $entry.chinvex_context = $NewName
-        Info "Chinvex: renamed context '$oldName' -> '$NewName'"
+        Info "Chinvex: renamed context '$oldChinvexContext' -> '$NewName'"
 
         # If folder was also moved, update the path in the context
         if ($folderMoved) {
@@ -151,8 +151,6 @@ function Invoke-Rename {
         Warn "Chinvex context rename failed. Context marked for reconciliation."
       }
     }
-    # Tool scope: no chinvex action needed (stays in 'tools' context)
-    # chinvex_context remains 'tools'
   }
 
   # Save registry

@@ -169,19 +169,18 @@ USAGE:
 COMMANDS:
     clone <url> [--tool|--software] [--no-chinvex]
         Clone and register a repository
-        --tool        Register as tool (shared 'tools' chinvex context)
-        --software    Register as software (individual context, default)
+        --tool        Use tool preset (depth=light, status=stable, tags=[third-party])
+        --software    Use software preset (depth=full, status=active, default)
         --no-chinvex  Skip chinvex integration
 
     adopt [--path <dir>] [--tool|--software] [--no-chinvex]
         Adopt existing repository into registry
-        --tool        Force tool scope (auto-detected from path if omitted)
-        --software    Force software scope
+        --tool        Use tool preset
+        --software    Use software preset
         --no-chinvex  Skip chinvex integration
 
     move <name> --dest <path> [--no-chinvex]
         Move repository to new location
-        Automatically handles scope changes (software <-> tool)
         --no-chinvex  Skip chinvex path updates
 
     rename <name> --to <new> [--move-folder] [--no-chinvex]
@@ -227,13 +226,13 @@ COMMANDS:
 
 GLOBAL FLAGS:
     --no-chinvex    Skip chinvex integration for this command
-    --tool          Register/treat as tool repository
-    --software      Register/treat as software repository (default)
+    --tool          Use tool preset (third-party repos)
+    --software      Use software preset (default)
 
 CHINVEX INTEGRATION:
     Strap automatically manages chinvex contexts:
-    - Software repos get individual contexts (context name = repo name)
-    - Tool repos share a single 'tools' context
+    - All repos get individual contexts (context name = repo name)
+    - Metadata (depth, status, tags) passed to chinvex
     - Use 'strap contexts' to view sync status
     - Use 'strap sync-chinvex --reconcile' to fix drift
 
@@ -244,7 +243,7 @@ EXAMPLES:
     strap clone https://github.com/user/myproject
     strap clone https://github.com/user/mytool --tool
     strap adopt --path P:\software\existing-repo
-    strap move myrepo --dest P:\software\_scripts  # becomes tool
+    strap move myrepo --dest P:\software\subdir
     strap contexts
     strap sync-chinvex --reconcile
 
@@ -768,7 +767,7 @@ function Invoke-Doctor {
         $seenNames = @{}
         foreach ($entry in $registry) {
           # Check required fields
-          $required = @('name', 'scope', 'path', 'updated_at', 'shims')
+          $required = @('name', 'chinvex_depth', 'status', 'tags', 'path', 'updated_at', 'shims')
           foreach ($field in $required) {
             if (-not $entry.PSObject.Properties[$field]) {
               $report.registry_check.issues += "Entry missing required field '$field': $($entry.name)"
