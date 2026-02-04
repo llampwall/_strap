@@ -178,18 +178,27 @@ function Sync-ChinvexForEntry {
     }
 
     # Step 2: Register repo with metadata
-    $registered = Invoke-Chinvex -Arguments @(
+    $baseArgs = @(
         "ingest", "--context", $contextName,
         "--repo", $RepoPath,
-        "--depth", $ChinvexDepth,
+        "--chinvex-depth", $ChinvexDepth,
         "--status", $Status,
         "--register-only"
     )
+
+    # Add tags if present
+    if ($Tags.Count -gt 0) {
+        $baseArgs += "--tags"
+        $baseArgs += ($Tags -join ",")
+    }
+
+    $registered = Invoke-Chinvex -Arguments $baseArgs
     if (-not $registered) {
         Warn "Failed to register repo in chinvex context '$contextName'"
         return $null
     }
 
-    Info "Synced to chinvex context: $contextName (depth=$ChinvexDepth, status=$Status)"
+    $tagsDisplay = if ($Tags.Count -gt 0) { ", tags=$($Tags -join ',')" } else { "" }
+    Info "Synced to chinvex context: $contextName (depth=$ChinvexDepth, status=$Status$tagsDisplay)"
     return $contextName
 }
