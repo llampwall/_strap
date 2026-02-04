@@ -1190,7 +1190,25 @@ if ($RepoName -eq "templatize") {
 }
 
 if ($RepoName -eq "doctor") {
-  Invoke-Doctor -StrapRootPath $TemplateRoot -OutputJson:$Json.IsPresent
+  $config = Load-Config $PSScriptRoot
+  $registry = Load-Registry $config
+
+  # Check for --shims flag
+  if ($ExtraArgs -contains "--shims") {
+    $results = Invoke-DoctorShimChecks -Config $config -Registry $registry
+    $output = Format-DoctorShimResults $results
+    Write-Host $output
+
+    $failed = ($results | Where-Object { -not $_.passed -and $_.severity -in @("critical", "error") }).Count
+    exit $(if ($failed -gt 0) { 1 } else { 0 })
+  }
+
+  # Fall back to old doctor command if exists
+  if (Get-Command Invoke-Doctor -ErrorAction SilentlyContinue) {
+    Invoke-Doctor -StrapRootPath $TemplateRoot -OutputJson:$Json.IsPresent
+  } else {
+    Write-Host "Usage: strap doctor --shims"
+  }
   exit 0
 }
 
@@ -1440,56 +1458,84 @@ if ($RepoName -eq "uninstall") {
 }
 
 if ($RepoName -eq "shim") {
-  # Two input modes:
-  # 1. --cmd "<command>" - command passed as string (avoids PowerShell parameter binding)
-  # 2. strap shim <name> --- <command...> - command parsed from args (uses --- to avoid conflicts)
+  $config = Load-Config $PSScriptRoot
+  $registry = Load-Registry $config
 
-  $shimName = $null
-  $commandLine = $null
-
-  if ($Cmd) {
-    # --cmd mode: command already provided as string
-    # Extract shim name from ExtraArgs (first non-flag arg)
-    if ($ExtraArgs -and $ExtraArgs.Count -gt 0) {
-      foreach ($arg in $ExtraArgs) {
-        if ($arg -notmatch '^--' -and -not $shimName) {
-          $shimName = $arg
-          break
-        }
-      }
-    }
-    $commandLine = $Cmd
-  } else {
-    # --- mode: parse separator and extract args
-    $commandArgs = @()
-    $foundSeparator = $false
-
-    if ($ExtraArgs -and $ExtraArgs.Count -gt 0) {
-      for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
-        $arg = $ExtraArgs[$i]
-
-        if ($arg -eq "---" -or $arg -eq "--") {
-          $foundSeparator = $true
-          # Everything after --- is the command
-          if ($i + 1 -lt $ExtraArgs.Count) {
-            $commandArgs = $ExtraArgs[($i + 1)..($ExtraArgs.Count - 1)]
-          }
-          break
-        }
-
-        # Before ---, look for the shim name (first non-flag arg)
-        if (-not $foundSeparator -and $arg -notmatch '^--' -and -not $shimName) {
-          $shimName = $arg
-        }
-      }
-    }
-
-    if ($commandArgs.Count -gt 0) {
-      $commandLine = $commandArgs -join ' '
+  # Check for --regen flag
+  $regenIdx = -1
+  for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
+    if ($ExtraArgs[$i] -eq "--regen") {
+      $regenIdx = $i
+      break
     }
   }
 
-  Invoke-Shim -ShimName $shimName -CommandLine $commandLine -WorkingDir $Cwd -RegistryEntryName $Repo -ForceOverwrite:$Force.IsPresent -DryRunMode:$DryRun.IsPresent -NonInteractive:$Yes.IsPresent -StrapRootPath $TemplateRoot
+  if ($regenIdx -ge 0) {
+    # strap shim --regen <repo>
+    $repoName = if ($ExtraArgs.Count -gt $regenIdx + 1) { $ExtraArgs[$regenIdx + 1] } else { Die "--regen requires repo name" }
+    Invoke-ShimRegen -RepoName $repoName -Config $config -Registry $registry
+    exit 0
+  }
+
+  # Parse shim creation args
+  $shimName = $null
+  $shimArgs = @{
+    Config = $config
+    Registry = $registry
+  }
+
+  # Extract shim name (first non-flag arg)
+  for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
+    if ($ExtraArgs[$i] -notmatch '^--' -and -not $shimName) {
+      $shimName = $ExtraArgs[$i]
+      break
+    }
+  }
+
+  if (-not $shimName) { Die "Must specify shim name" }
+  $shimArgs.ShimName = $shimName
+
+  # Parse flags
+  for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
+    $arg = $ExtraArgs[$i]
+    switch ($arg) {
+      "--cmd" { $shimArgs.Cmd = $ExtraArgs[++$i] }
+      "--exe" { $shimArgs.Exe = $ExtraArgs[++$i] }
+      "--args" { $shimArgs.BaseArgs = $ExtraArgs[++$i] -split ',' }
+      "--venv" {
+        $shimArgs.ShimType = "venv"
+        # Check if next arg is a path (doesn't start with --)
+        if ($i + 1 -lt $ExtraArgs.Count -and -not $ExtraArgs[$i + 1].StartsWith("--")) {
+          $shimArgs.VenvPath = $ExtraArgs[++$i]
+        }
+      }
+      "--node" { $shimArgs.ShimType = "node" }
+      "--node-exe" { $shimArgs.NodeExe = $ExtraArgs[++$i] }
+      "--cwd" { $shimArgs.WorkingDir = $ExtraArgs[++$i] }
+      "--repo" { $shimArgs.RegistryEntryName = $ExtraArgs[++$i] }
+      "--force" { $shimArgs.ForceOverwrite = $true }
+      "--dry-run" { $shimArgs.DryRun = $true }
+    }
+  }
+
+  if (-not $shimArgs.RegistryEntryName) {
+    Die "Must specify --repo <name>"
+  }
+
+  $shimEntry = Invoke-Shim @shimArgs
+
+  if ($shimEntry -and -not $shimArgs.DryRun) {
+    # Update registry
+    $repoEntry = $registry | Where-Object { $_.name -eq $shimArgs.RegistryEntryName }
+
+    # Remove existing shim entry if present
+    $repoEntry.shims = @($repoEntry.shims | Where-Object { $_.name -ne $shimName })
+
+    # Add new entry
+    $repoEntry.shims += $shimEntry
+
+    Save-Registry $config $registry
+  }
   exit 0
 }
 
