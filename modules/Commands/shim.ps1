@@ -1,205 +1,422 @@
-# shim.ps1
-# Command: Invoke-Shim
+# Shim.ps1 - Unified shim system for strap v3.1
+# Creates dual-file shims (.ps1 + .cmd) for venv/node/simple commands
 
-function Invoke-Shim {
-  param(
-    [string] $ShimName,
-    [string] $CommandLine,
-    [string] $WorkingDir,
-    [string] $RegistryEntryName,
-    [switch] $ForceOverwrite,
-    [switch] $DryRunMode,
-    [switch] $NonInteractive,
-    [string] $StrapRootPath
-  )
+#region Command Parsing
 
-  if (-not $ShimName) { Die "shim requires <name>" }
-  if (-not $CommandLine) { Die "shim requires a command (use --- <command...> or --cmd `"<command>`")" }
+function Parse-ShimCommandLine {
+    param([Parameter(Mandatory)][string]$CommandLine)
 
-  # Validate shim name (no path separators or reserved chars)
-  if ($ShimName -match '[\\/:*?"<>|]') {
-    Die "Invalid shim name: '$ShimName' (contains path separators or reserved characters)"
-  }
+    $trimmed = $CommandLine.Trim()
 
-  # Normalize name (trim, replace spaces with -)
-  $ShimName = $ShimName.Trim() -replace '\s+', '-'
-
-  # Load config
-  $config = Load-Config $StrapRootPath
-  $shimsRoot = $config.roots.shims
-
-  # Determine shim path
-  $shimPath = Join-Path $shimsRoot "$ShimName.cmd"
-  $shimPathResolved = [System.IO.Path]::GetFullPath($shimPath)
-
-  # Safety: ensure shimPath is within shimsRoot
-  $shimsRootResolved = [System.IO.Path]::GetFullPath($shimsRoot)
-  if (-not $shimPathResolved.StartsWith($shimsRootResolved, [StringComparison]::OrdinalIgnoreCase)) {
-    Die "Shim path is not within shims root: $shimPathResolved"
-  }
-
-  # Load registry
-  $registry = Load-Registry $config
-
-  # Determine registry attachment
-  $attachedEntry = $null
-
-  if ($RegistryEntryName) {
-    # User specified --repo
-    $attachedEntry = $registry | Where-Object { $_.name -eq $RegistryEntryName }
-    if (-not $attachedEntry) {
-      Die "Registry entry not found: '$RegistryEntryName'. Use 'strap list' to see all entries."
-    }
-  } else {
-    # Try to match current directory to a registry entry
-    $currentDir = (Get-Location).Path
-    $currentDirResolved = [System.IO.Path]::GetFullPath($currentDir)
-
-    foreach ($entry in $registry) {
-      $entryPathResolved = [System.IO.Path]::GetFullPath($entry.path)
-
-      # Check if current dir equals or is inside entry path
-      if ($currentDirResolved -eq $entryPathResolved -or
-          $currentDirResolved.StartsWith("$entryPathResolved\", [StringComparison]::OrdinalIgnoreCase)) {
-        $attachedEntry = $entry
-        break
-      }
+    # JSON array form
+    if ($trimmed.StartsWith('[')) {
+        $parts = $null
+        try {
+            $parts = $trimmed | ConvertFrom-Json
+        } catch {
+            Die "Invalid JSON array: $CommandLine"
+        }
+        if ($parts.Count -eq 0) {
+            Die "Empty command array"
+        }
+        return @{
+            exe = $parts[0]
+            baseArgs = @($parts | Select-Object -Skip 1)
+        }
     }
 
-    if (-not $attachedEntry) {
-      Die "No registry entry found for current directory. Run from inside a registered repo or use --repo <name>."
+    # PowerShell tokenizer
+    $tokens = $null
+    $errors = $null
+    [void][System.Management.Automation.Language.Parser]::ParseInput(
+        "& $trimmed",
+        [ref]$tokens,
+        [ref]$errors
+    )
+
+    # Block shell operators
+    $blocked = $tokens | Where-Object {
+        $_.Kind -in @('Pipe', 'Semi', 'Redirection', 'AndAnd', 'OrOr')
     }
-  }
-
-  # Preview
-  Write-Host ""
-  Write-Host "=== SHIM PREVIEW ===" -ForegroundColor Cyan
-  Write-Host "Shim name:      $ShimName"
-  Write-Host "Shim path:      $shimPathResolved"
-  Write-Host "Attached repo:  $($attachedEntry.name) ($($attachedEntry.scope))"
-  Write-Host "Repo path:      $($attachedEntry.path)"
-  Write-Host "Command:        $CommandLine"
-  if ($WorkingDir) {
-    Write-Host "Working dir:    $WorkingDir"
-  }
-
-  # Check if shim already exists
-  if (Test-Path $shimPathResolved) {
-    if (-not $ForceOverwrite) {
-      Write-Host ""
-      Write-Host "Shim already exists at: $shimPathResolved" -ForegroundColor Yellow
-      Die "Use --force to overwrite"
-    }
-    Write-Host ""
-    Write-Host "Will overwrite existing shim (--force)" -ForegroundColor Yellow
-  }
-
-  if ($DryRunMode) {
-    Write-Host ""
-    Write-Host "DRY RUN - no changes will be made" -ForegroundColor Cyan
-    return
-  }
-
-  # Confirmation
-  if (-not $NonInteractive) {
-    Write-Host ""
-    $response = Read-Host "Proceed? (y/n)"
-    if ($response -ne "y") {
-      Info "Aborted by user"
-      exit 1
-    }
-  }
-
-  Write-Host ""
-
-  # Generate shim content
-  $shimContent = @"
-@echo off
-setlocal
-
-"@
-
-  if ($WorkingDir) {
-    $shimContent += @"
-pushd "$WorkingDir" >nul
-
-"@
-  }
-
-  $shimContent += @"
-$CommandLine %*
-set "EC=%ERRORLEVEL%"
-
-"@
-
-  if ($WorkingDir) {
-    $shimContent += @"
-popd >nul
-
-"@
-  }
-
-  $shimContent += @"
-exit /b %EC%
-"@
-
-  # Write shim file
-  Info "Creating shim..."
-  try {
-    # Ensure shims directory exists
-    if (-not (Test-Path $shimsRoot)) {
-      New-Item -ItemType Directory -Path $shimsRoot -Force | Out-Null
+    if ($blocked) {
+        Die "Shims only support direct exec + args. Use a wrapper script instead."
     }
 
-    [System.IO.File]::WriteAllText($shimPathResolved, $shimContent, (New-Object System.Text.UTF8Encoding($false)))
-    Write-Host "  created: $shimPathResolved" -ForegroundColor Green
-  } catch {
-    Write-Host "  ERROR creating shim: $_" -ForegroundColor Red
-    exit 2
-  }
+    # Extract argument tokens (skip '&' and 'EndOfInput')
+    $parts = @($tokens |
+        Where-Object { $_.Kind -notin @('Ampersand', 'EndOfInput') } |
+        ForEach-Object {
+            # For quoted strings, use Value. For everything else, use Text
+            if ($_.Value) { $_.Value } else { $_.Text }
+        })
 
-  # Update registry entry
-  Info "Updating registry..."
-
-  # Find the entry in the registry array (we need to work with the original array)
-  $entryIndex = -1
-  for ($i = 0; $i -lt $registry.Count; $i++) {
-    if ($registry[$i].name -eq $attachedEntry.name) {
-      $entryIndex = $i
-      break
+    if ($parts.Count -eq 0) {
+        Die "Could not parse command: $CommandLine"
     }
-  }
 
-  if ($entryIndex -eq -1) {
-    Die "Internal error: could not find entry in registry after validation"
-  }
-
-  # Ensure shims array exists
-  if (-not $registry[$entryIndex].shims) {
-    $registry[$entryIndex] | Add-Member -NotePropertyName "shims" -NotePropertyValue @() -Force
-  }
-
-  # Add shim path if not already present
-  $shimsList = @($registry[$entryIndex].shims)
-  if ($shimPathResolved -notin $shimsList) {
-    $shimsList += $shimPathResolved
-    $registry[$entryIndex].shims = $shimsList
-  }
-
-  # Update timestamp
-  $registry[$entryIndex].updated_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-
-  # Save registry
-  try {
-    Save-Registry $config $registry
-    Ok "Registry updated"
-  } catch {
-    Write-Host "ERROR updating registry: $_" -ForegroundColor Red
-    exit 3
-  }
-
-  Write-Host ""
-  Ok "Shim created: $ShimName"
-  Info "You can now run '$ShimName' from anywhere"
+    return @{
+        exe = $parts[0]
+        baseArgs = @($parts | Select-Object -Skip 1)
+    }
 }
 
+#endregion
+
+#region Template Generation
+
+function Format-ShimBaseArgs {
+    param([array]$BaseArgs)
+
+    if (-not $BaseArgs -or $BaseArgs.Count -eq 0) {
+        return '@()'
+    }
+
+    $quoted = $BaseArgs | ForEach-Object { "`"$($_ -replace '\\', '\\' -replace '"', '`"')`"" }
+    return "@($($quoted -join ', '))"
+}
+
+function New-ShimPs1Content {
+    param([Parameter(Mandatory)][hashtable]$Meta)
+
+    $header = @"
+# Generated by strap shim - do not edit
+# Repo: $($Meta.repo) | Type: $($Meta.type)$(if ($Meta.venv) { " | Venv: $($Meta.venv)" })$(if ($Meta.cwd) { " | Cwd: $($Meta.cwd)" })
+`$ErrorActionPreference = "Stop"
+"@
+
+    $baseArgsStr = Format-ShimBaseArgs $Meta.baseArgs
+
+    if ($Meta.cwd) {
+        $body = @"
+`$ec = 0
+Push-Location "$($Meta.cwd)"
+try {
+$(if ($Meta.venv) { "    `$venv = `"$($Meta.venv)`"`n" })    `$exe = "$($Meta.exe)"
+    `$baseArgs = $baseArgsStr
+    & `$exe @baseArgs @args
+    `$ec = if (`$null -eq `$LASTEXITCODE) { 0 } else { `$LASTEXITCODE }
+} finally {
+    Pop-Location
+}
+exit `$ec
+"@
+    } else {
+        $body = @"
+$(if ($Meta.venv) { "`$venv = `"$($Meta.venv)`"`n" })`$exe = "$($Meta.exe)"
+`$baseArgs = $baseArgsStr
+& `$exe @baseArgs @args
+`$ec = if (`$null -eq `$LASTEXITCODE) { 0 } else { `$LASTEXITCODE }
+exit `$ec
+"@
+    }
+
+    return "$header`n$body"
+}
+
+function New-ShimCmdContent {
+    param(
+        [Parameter(Mandatory)][string]$ShimName,
+        [Parameter(Mandatory)][string]$PwshExe
+    )
+
+    return @"
+@echo off
+"$PwshExe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0$ShimName.ps1" %*
+exit /b %errorlevel%
+"@
+}
+
+#endregion
+
+#region Main Function
+
+function Invoke-Shim {
+    param(
+        [Parameter(Mandatory)][string]$ShimName,
+
+        # Command specification
+        [string]$Cmd,
+        [string]$Exe,
+        [string[]]$BaseArgs,
+
+        # Shim configuration
+        [ValidateSet("simple", "venv", "node")]
+        [string]$ShimType = "simple",
+        [string]$VenvPath,
+        [string]$NodeExe,
+        [string]$WorkingDir,
+
+        # Context
+        [Parameter(Mandatory)][string]$RegistryEntryName,
+        [Parameter(Mandatory)][object]$Config,
+        [Parameter(Mandatory)][array]$Registry,
+
+        # Behavior
+        [switch]$ForceOverwrite,
+        [switch]$DryRun
+    )
+
+    # Validate shim name
+    if ($ShimName -notmatch '^[a-zA-Z0-9_-]+$') {
+        Die "Invalid shim name '$ShimName'. Use only alphanumeric, hyphen, underscore."
+    }
+
+    # Validate pwshExe exists
+    if (-not (Test-Path $Config.defaults.pwshExe)) {
+        Die "pwshExe not found: $($Config.defaults.pwshExe). Update strap config."
+    }
+
+    # Find repo entry
+    $repoEntry = $Registry | Where-Object { $_.name -eq $RegistryEntryName }
+    if (-not $repoEntry) {
+        Die "Registry entry '$RegistryEntryName' not found."
+    }
+
+    # Parse command
+    if ($Cmd -and $Exe) {
+        Die "Cannot use --cmd with --exe. Pick one."
+    }
+    if (-not $Cmd -and -not $Exe) {
+        Die "Must provide --cmd or --exe."
+    }
+
+    if ($Cmd) {
+        $parsed = Parse-ShimCommandLine $Cmd
+        $shimExe = $parsed.exe
+        $shimBaseArgs = $parsed.baseArgs
+    } else {
+        $shimExe = $Exe
+        $shimBaseArgs = if ($BaseArgs) { $BaseArgs } else { @() }
+    }
+
+    # Resolve exe based on type
+    $resolvedExe = $shimExe
+    $resolvedVenv = $null
+
+    switch ($ShimType) {
+        "venv" {
+            $resolvedVenv = Resolve-ShimVenvPath -RepoPath $repoEntry.repoPath -ExplicitPath $VenvPath
+            $resolution = Resolve-ShimVenvExe -Exe $shimExe -VenvPath $resolvedVenv
+            $resolvedExe = $resolution.resolvedPath
+            if (-not $resolution.exists) {
+                Warn "Exe not found in venv: $resolvedExe. Shim may not work until package is installed."
+            }
+        }
+        "node" {
+            $resolvedExe = Resolve-ShimNodeExe -CliOverride $NodeExe -Config $Config
+            # For node type, shimExe becomes baseArgs[0] (JS entrypoint)
+            $shimBaseArgs = @($shimExe) + $shimBaseArgs
+        }
+    }
+
+    # Check for collision
+    $shimsDir = $Config.roots.shims
+    $ps1Path = Join-Path $shimsDir "$ShimName.ps1"
+    $cmdPath = Join-Path $shimsDir "$ShimName.cmd"
+
+    $existingOwner = $null
+    foreach ($entry in $Registry) {
+        $ownsShim = $entry.shims | Where-Object { $_.name -eq $ShimName }
+        if ($ownsShim) {
+            $existingOwner = $entry.name
+            break
+        }
+    }
+
+    if ((Test-Path $ps1Path) -or $existingOwner) {
+        if ($existingOwner -and $existingOwner -ne $RegistryEntryName) {
+            if (-not $ForceOverwrite) {
+                Die "Shim '$ShimName' already exists (owned by '$existingOwner'). Use --force to overwrite."
+            }
+        }
+        # Same repo or --force: allow update
+    }
+
+    # Build shim metadata
+    $shimMeta = @{
+        name = $ShimName
+        repo = $RegistryEntryName
+        type = $ShimType
+        exe = $resolvedExe
+        baseArgs = $shimBaseArgs
+        venv = $resolvedVenv
+        cwd = $WorkingDir
+    }
+
+    # Generate content
+    $ps1Content = New-ShimPs1Content $shimMeta
+    $cmdContent = New-ShimCmdContent -ShimName $ShimName -PwshExe $Config.defaults.pwshExe
+
+    if ($DryRun) {
+        Write-Host "DRY RUN - no changes will be made" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "Would create:" -ForegroundColor Cyan
+        Write-Host "  $ps1Path"
+        Write-Host "  $cmdPath"
+        Write-Host ""
+        Write-Host "Generated .ps1 content:" -ForegroundColor Cyan
+        Write-Host "---"
+        Write-Host $ps1Content
+        Write-Host "---"
+        return $null
+    }
+
+    # Ensure shims directory exists
+    if (-not (Test-Path $shimsDir)) {
+        New-Item -ItemType Directory -Path $shimsDir -Force | Out-Null
+    }
+
+    # Write files (with rollback on failure)
+    try {
+        [System.IO.File]::WriteAllText($ps1Path, $ps1Content, (New-Object System.Text.UTF8Encoding($false)))
+        [System.IO.File]::WriteAllText($cmdPath, $cmdContent, (New-Object System.Text.UTF8Encoding($false)))
+    } catch {
+        # Rollback
+        if (Test-Path $ps1Path) { Remove-Item $ps1Path -Force }
+        if (Test-Path $cmdPath) { Remove-Item $cmdPath -Force }
+        Die "Failed to write shim files: $_"
+    }
+
+    # Build registry entry
+    $shimEntry = @{
+        name = $ShimName
+        ps1Path = $ps1Path
+        type = $ShimType
+        exe = $resolvedExe
+        baseArgs = $shimBaseArgs
+    }
+    if ($resolvedVenv) { $shimEntry.venv = $resolvedVenv }
+    if ($WorkingDir) { $shimEntry.cwd = $WorkingDir }
+
+    Write-Host "[OK] Created shim: $ShimName" -ForegroundColor Green
+    Write-Host "  $ps1Path" -ForegroundColor Gray
+    Write-Host "  $cmdPath" -ForegroundColor Gray
+    Write-Host "  Registered to: $RegistryEntryName ($ShimType)" -ForegroundColor Gray
+
+    return $shimEntry
+}
+
+#endregion
+
+#region Regen Command
+
+function Invoke-ShimRegen {
+    param(
+        [Parameter(Mandatory)][string]$RepoName,
+        [Parameter(Mandatory)][object]$Config,
+        [Parameter(Mandatory)][array]$Registry
+    )
+
+    $repoEntry = $Registry | Where-Object { $_.name -eq $RepoName }
+    if (-not $repoEntry) {
+        Die "Registry entry '$RepoName' not found."
+    }
+
+    $shims = $repoEntry.shims
+    if (-not $shims -or $shims.Count -eq 0) {
+        Write-Host "No shims registered for '$RepoName'." -ForegroundColor Yellow
+        return
+    }
+
+    Write-Host "Regenerating $($shims.Count) shim(s) for '$RepoName'..." -ForegroundColor Cyan
+
+    foreach ($shim in $shims) {
+        $shimMeta = @{
+            name = $shim.name
+            repo = $RepoName
+            type = $shim.type
+            exe = $shim.exe
+            baseArgs = if ($shim.baseArgs) { $shim.baseArgs } else { @() }
+            venv = $shim.venv
+            cwd = $shim.cwd
+        }
+
+        $ps1Content = New-ShimPs1Content $shimMeta
+        $cmdContent = New-ShimCmdContent -ShimName $shim.name -PwshExe $Config.defaults.pwshExe
+
+        $shimsDir = $Config.roots.shims
+        $ps1Path = Join-Path $shimsDir "$($shim.name).ps1"
+        $cmdPath = Join-Path $shimsDir "$($shim.name).cmd"
+
+        [System.IO.File]::WriteAllText($ps1Path, $ps1Content, (New-Object System.Text.UTF8Encoding($false)))
+        [System.IO.File]::WriteAllText($cmdPath, $cmdContent, (New-Object System.Text.UTF8Encoding($false)))
+
+        Write-Host "  [OK] $($shim.name)" -ForegroundColor Green
+    }
+
+    Write-Host "Done." -ForegroundColor Cyan
+}
+
+#endregion
+
+#region Exe Resolution
+
+function Resolve-ShimVenvPath {
+    param(
+        [Parameter(Mandatory)][string]$RepoPath,
+        [string]$ExplicitPath
+    )
+
+    if ($ExplicitPath) {
+        return $ExplicitPath
+    }
+
+    $candidates = @(".venv", "venv", ".virtualenv")
+    foreach ($candidate in $candidates) {
+        $testPath = Join-Path $RepoPath $candidate
+        $pythonExe = Join-Path $testPath "Scripts\python.exe"
+        if (Test-Path $pythonExe) {
+            return $testPath
+        }
+    }
+
+    Die "No venv found in $RepoPath. Use --venv <path> to specify explicitly."
+}
+
+function Resolve-ShimVenvExe {
+    param(
+        [Parameter(Mandatory)][string]$Exe,
+        [Parameter(Mandatory)][string]$VenvPath
+    )
+
+    $scriptsDir = Join-Path $VenvPath "Scripts"
+
+    if ($Exe -eq "python") {
+        $resolved = Join-Path $scriptsDir "python.exe"
+    } else {
+        $resolved = Join-Path $scriptsDir "$Exe.exe"
+    }
+
+    return @{
+        resolvedPath = $resolved
+        exists = Test-Path $resolved
+    }
+}
+
+function Resolve-ShimNodeExe {
+    param(
+        [string]$CliOverride,
+        [Parameter(Mandatory)][object]$Config
+    )
+
+    if ($CliOverride) {
+        if (-not (Test-Path $CliOverride)) {
+            Die "Node exe not found: $CliOverride"
+        }
+        return $CliOverride
+    }
+
+    if ($Config.defaults.nodeExe -and (Test-Path $Config.defaults.nodeExe)) {
+        return $Config.defaults.nodeExe
+    }
+
+    $found = Get-Command node -ErrorAction SilentlyContinue
+    if ($found) {
+        Warn "Using node from PATH: $($found.Source). Consider setting defaults.nodeExe."
+        return $found.Source
+    }
+
+    Die "Node not found. Set defaults.nodeExe in config or provide --node-exe."
+}
+
+#endregion
