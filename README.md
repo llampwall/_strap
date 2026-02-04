@@ -13,6 +13,7 @@ Complete Windows dev environment manager with three capabilities:
 - Uninstall cleanly (removes folder + shims + registry entry)
 - Schema versioning means it won't brick itself as it evolves
 
+<!--
 **3. Environment consolidation** — migrate scattered repos:
 - Guided wizard (`strap consolidate`) moves entire directories of repos
 - Automatic discovery and adoption with scope classification
@@ -20,6 +21,7 @@ Complete Windows dev environment manager with three capabilities:
 - External reference detection (PM2, scheduled tasks, shims, PATH, profiles)
 - Safe cross-volume moves with git integrity verification
 - Rollback on failure, actionable fix list on success
+-->
 
 **What makes it special:** Single front door for your dev tools. Instead of scattered `git clone` + manual PATH edits + "where did I put that script?", everything goes through strap.
 
@@ -72,6 +74,7 @@ strap update --all --tool
 strap doctor
 ```
 
+<!--
 ### Consolidation (Migrate Existing Repos)
 
 ```powershell
@@ -84,6 +87,19 @@ strap consolidate --from "C:\Code" --dry-run
 # automatic mode (no prompts, auto-stop PM2 if needed)
 strap consolidate --from "C:\Code" --yes --stop-pm2
 ```
+-->
+
+## ⚠️ Disabled Commands
+
+The following commands are currently **disabled** due to safety concerns from the 2026-02-02 environment corruption incident:
+
+- `strap snapshot` - Create snapshots of managed repos
+- `strap audit` - Scan for path dependencies
+- `strap migrate` - Execute consolidation moves
+- `strap consolidate` - Guided migration wizard
+- `strap archive` - Archive old repos
+
+These commands will return a warning message referencing `docs/incidents/2026-02-02-environment-corruption.md`. They are pending review and safety improvements before being re-enabled.
 
 ## Usage
 
@@ -115,11 +131,11 @@ strap shim <name> --- <command...> [--cwd <path>] [--repo <name>] [--force] [--d
 strap shim <name> --cmd "<command>" [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
 strap uninstall <name> [--yes]
 strap doctor [--json]
-strap migrate [--yes] [--dry-run] [--backup] [--json] [--to <version>] [--plan]
-strap snapshot [--output <path>] [--scan <dir>...]
-strap audit <name|--all> [--json] [--rebuild-index]
-strap archive <name> [--yes] [--dry-run]
-strap consolidate --from <dir> [--to <root>] [--dry-run] [--yes] [--stop-pm2] [--ack-scheduled-tasks] [--allow-dirty] [--allow-auto-archive]
+# strap migrate [--yes] [--dry-run] [--backup] [--json] [--to <version>] [--plan]
+# strap snapshot [--output <path>] [--scan <dir>...]
+# strap audit <name|--all> [--json] [--rebuild-index]
+# strap archive <name> [--yes] [--dry-run]
+# strap consolidate --from <dir> [--to <root>] [--dry-run] [--yes] [--stop-pm2] [--ack-scheduled-tasks] [--allow-dirty] [--allow-auto-archive]
 ```
 
 ### Parameters
@@ -210,6 +226,7 @@ strap consolidate --from <dir> [--to <root>] [--dry-run] [--yes] [--stop-pm2] [-
 **doctor**
 - `--json` — output structured JSON instead of human-readable format
 
+<!--
 **migrate**
 - `--yes` — skip confirmation prompts
 - `--dry-run` — preview migrations without writing to registry
@@ -242,6 +259,7 @@ strap consolidate --from <dir> [--to <root>] [--dry-run] [--yes] [--stop-pm2] [-
 - `--ack-scheduled-tasks` — acknowledge scheduled task warnings
 - `--allow-dirty` — allow repos with uncommitted changes
 - `--allow-auto-archive` — with `--yes`, apply archive suggestions automatically
+-->
 
 ### Examples
 
@@ -352,6 +370,7 @@ strap update youtube-md --dry-run
 # Check registry version and system health
 strap doctor
 
+<!--
 # Migrate registry to latest version
 strap migrate --yes
 
@@ -363,6 +382,7 @@ strap migrate --yes --backup
 
 # Preview migration changes
 strap migrate --dry-run
+-->
 
 # Create a shim from inside a registered repo
 cd P:\software\_scripts\youtube-md
@@ -392,6 +412,7 @@ strap uninstall youtube-md --yes
 # Discover and adopt all repos in a directory
 strap adopt --scan C:\Code --recursive
 
+<!--
 # Create a snapshot before major changes
 strap snapshot --output pre-migration.json --scan C:\Code --scan P:\software
 
@@ -412,6 +433,7 @@ strap consolidate --from "C:\Code" --yes --stop-pm2
 
 # Preview consolidation without executing
 strap consolidate --from "C:\Code" --dry-run
+-->
 ```
 
 ## What Strap Does
@@ -447,21 +469,23 @@ Strap has two modes:
 - `list`: show all registered repos
 - `open`: open a registered repo's folder in File Explorer
 - `doctor`: diagnose strap + registry health
-- `migrate`: upgrade registry schema safely (backfills required fields, enforces invariants)
+<!-- - `migrate`: upgrade registry schema safely (backfills required fields, enforces invariants) -->
 
+<!--
 ### Consolidation workflow (migrate scattered repos)
 
 - `snapshot`: create a JSON manifest of current dev environment (registry, discovered repos, external refs, disk space)
 - `audit`: scan for path dependencies (inbound/outbound) and external references (PM2, scheduled tasks, shims, PATH, profiles)
 - `archive`: move old/inactive repos to archive location and update scope
 - `consolidate`: guided wizard for full migration (snapshot → discovery → audit → preflight → execute → verify)
+-->
 
 ### Registry System
 
-Lifecycle management uses a JSON registry at `/registry.json` to track all cloned repos and their associated shims.
+Lifecycle management uses a JSON registry at `registry.json` (in the strap directory) to track all cloned repos and their associated shims.
 
 **Registry metadata (V2):**
-- `registry_version` — schema version (current: 2)
+- `version` — schema version (current: 2)
 - `updated_at` — ISO 8601 timestamp of last registry update
 - `metadata.trust_mode` — "registry-first" (default) or "disk-discovery" (recovery mode)
 
@@ -473,9 +497,9 @@ Lifecycle management uses a JSON registry at `/registry.json` to track all clone
 - `id` — unique identifier
 - `name` — repo name (used for commands)
 - `scope` — "tool", "software", or "archive"
-- `path` — absolute path to the cloned repository
+- `repoPath` — absolute path to the cloned repository
 - `url` — git remote URL (if available)
-- `shims` — array of shim file paths
+- `shims` — array of shim metadata objects (see Shim System section)
 - `created_at` — ISO 8601 timestamp
 - `updated_at` — ISO 8601 timestamp
 - `last_pull_at` — ISO 8601 timestamp of last update (added by `strap update`)
@@ -510,6 +534,137 @@ strap shim flask --- python -m flask run
 ```
 
 The `--cmd` mode passes the entire command as a quoted string, preventing PowerShell from parsing individual flags.
+
+## Shim System
+
+The shim system is strap's solution to a class of recurring environment management problems. **One shims folder (`P:\software\bin`) on PATH. That's strap's PATH.** All tool launchers live there.
+
+### Why Shims?
+
+The shim pattern solves multiple error classes at once:
+
+1. **"Which Python/process is running?"** — Shim explicitly activates the correct venv and calls the right binary
+2. **"Scheduled task can't find X"** — Scheduled task calls the shim, shim handles the environment
+3. **"Installed to wrong location"** — Doesn't matter, shim points to the canonical location
+4. **PATH is 2000 chars and full of duplicates"** — One entry: `P:\software\bin`
+
+For example, with chinvex:
+```powershell
+P:\software\bin\chinvex.ps1      # activates .venv, calls chinvex
+P:\software\bin\chinvex-mcp.ps1  # activates .venv, calls chinvex-mcp
+P:\software\bin\pm2-start.ps1    # sets up node PATH, calls pm2 start ecosystem
+```
+
+A scheduled task becomes:
+```powershell
+$action = New-ScheduledTaskAction -Execute "pwsh.exe" -Argument "-File P:\software\bin\pm2-start.ps1"
+```
+
+No hardcoded paths in the task itself. The shim owns that knowledge.
+
+**This is strap's job.** When strap registers a tool, it creates the shim. `strap adopt/shim/clone` creates shims pointing to venvs or executables. Strap's doctor command verifies all shims point to valid targets.
+
+### Dual-File System
+
+Shims are generated as **two files**:
+- `<name>.ps1` — PowerShell launcher script (does the actual work)
+- `<name>.cmd` — Batch wrapper that calls the `.ps1` file
+
+This dual-file system ensures shims work from any Windows shell (cmd.exe, PowerShell, pwsh, IDEs, scheduled tasks).
+
+### Shim Types
+
+Strap supports three shim types with different environment handling:
+
+#### `simple`
+Direct command execution with no special environment setup.
+
+```powershell
+strap shim godex --cmd "node scripts/cli.js" --repo godex
+```
+
+Generated shim runs `node scripts/cli.js` directly in the repo directory.
+
+#### `venv` (Python)
+Automatically discovers and activates Python virtual environments before running the command.
+
+```powershell
+strap shim chinvex --cmd "chinvex" --repo chinvex
+```
+
+Auto-discovery searches for:
+- `.venv/Scripts/chinvex.exe`
+- `venv/Scripts/chinvex.exe`
+- `.virtualenv/Scripts/chinvex.exe`
+
+The shim activates the venv and resolves the executable automatically. No need to specify venv path manually.
+
+#### `node`
+Sets up Node.js PATH using `nodeExe` from config before running the command.
+
+```powershell
+strap shim pm2-start --cmd "pm2 start ecosystem" --repo pm2-tools
+```
+
+The shim uses the configured Node.js installation path and ensures proper `NODE_PATH` resolution.
+
+### Command Parsing
+
+Shims support two command input formats:
+
+**JSON Array** (explicit):
+```powershell
+strap shim mytool --cmd '["python", "-m", "myapp", "--arg"]' --repo mytool
+```
+
+**PowerShell Command String** (tokenized):
+```powershell
+strap shim mytool --cmd "python -m myapp --arg" --repo mytool
+# Alternative with --- separator
+strap shim mytool --- python -m myapp --arg
+```
+
+The tokenizer automatically parses the command string into executable + arguments using PowerShell's AST parser. It blocks dangerous operators:
+- Pipes (`|`)
+- Redirects (`>`, `<`, `>>`)
+- Command chaining (`&&`, `||`, `;`)
+
+### Shim Regeneration
+
+After moving a repo or changing configuration, regenerate its shims:
+
+```powershell
+strap shim --regen <repo-name>
+```
+
+This updates the shim to point to the new repo location without re-specifying commands.
+
+### Registry V2 Shim Metadata
+
+Each shim is tracked in the registry with full metadata:
+
+```json
+{
+  "name": "chinvex",
+  "type": "venv",
+  "ps1Path": "P:\\software\\bin\\chinvex.ps1",
+  "exe": "P:\\software\\chinvex\\.venv\\Scripts\\chinvex.exe",
+  "venv": "P:\\software\\chinvex\\.venv",
+  "baseArgs": [],
+  "cwd": "P:\\software\\chinvex"
+}
+```
+
+Fields:
+- `name` — shim command name
+- `type` — `simple`, `venv`, or `node`
+- `ps1Path` — path to the .ps1 launcher script
+- `exe` — resolved executable path
+- `venv` — virtual environment path (venv type only)
+- `baseArgs` — arguments array from command parsing
+- `cwd` — working directory override (optional)
+
+This metadata enables `strap doctor` health checks (SHIM001-SHIM009) to validate shim integrity.
 
 ## Move
 
@@ -640,6 +795,7 @@ strap rename myproject --to my-project --move-folder --dry-run
 - Reports status: OK (all good), WARN (non-critical issues), or FAIL (critical issues)
 - Use `--json` for structured output instead of human-readable format
 
+<!--
 ## Snapshot
 
 `strap snapshot` creates a JSON manifest of your current dev environment state before migration or major changes. It's a metadata-only safety net - not a file backup, just a map of what's where.
@@ -670,6 +826,7 @@ strap snapshot --output pre-migration.json --scan C:\Code --scan P:\software
 - Does NOT detect: NSSM services, VS Code workspace settings, dynamic path construction, running processes
 - User must manually audit additional integrations
 - User must close IDEs and terminals before consolidation
+-->
 
 ## Adopt (Enhanced)
 
@@ -716,6 +873,7 @@ strap adopt --scan C:\Code --scope software --yes
 - With `--yes`: never auto-archives unless `--allow-auto-archive` is also provided
 - Validates paths before writing to registry
 
+<!--
 ## Audit
 
 `strap audit` scans for path dependencies that would break when repos are moved. It checks both outbound (what this repo depends on) and inbound (what depends on this repo) references.
@@ -752,7 +910,9 @@ strap audit --all --json
 - Does NOT detect embedded configs in binaries
 - False positives possible for path-like strings in docs
 - **Audit is a discovery tool, not a complete safety guarantee** - always manually review output
+-->
 
+<!--
 ## Archive
 
 `strap archive` moves a repo to the archive location (`P:\software\_archive\` by default) and updates its scope to `archive`.
@@ -776,7 +936,9 @@ strap archive old-experiment --yes
 # Preview before archiving
 strap archive old-experiment --dry-run
 ```
+-->
 
+<!--
 ## Consolidate
 
 `strap consolidate` is the single entrypoint for migrating entire directories of repos. It runs as a guided wizard that walks through every step: snapshot, discovery, audit, preflight, execution, and verification.
@@ -834,6 +996,7 @@ strap consolidate --from "C:\Code" --yes --allow-auto-archive
 - Manually update shell profiles, PATH entries, scheduled tasks (consolidate shows exact instructions)
 - Source directory will be empty - safe to delete
 - Run `strap doctor` anytime to verify registry consistency
+-->
 
 ## Templatize
 
@@ -899,14 +1062,47 @@ Vite configs are set to `allowedHosts: true` to allow access from other hosts.
 
 ## Chinvex Integration
 
-Strap integrates with [chinvex](https://github.com/chainlist/chinvex) for automatic context management. When you clone, adopt, move, rename, or uninstall repositories, strap keeps chinvex contexts in sync.
+**Strap and chinvex are synchronized automatically. Being in the strap registry means being in chinvex.** This gives you a single source of truth for what's available in your system.
 
-See [docs/chinvex-integration.md](docs/chinvex-integration.md) for full documentation.
+### Automatic Context Management
 
-Quick commands:
-- `strap contexts` - View context sync status
-- `strap sync-chinvex` - Preview reconciliation
-- `strap sync-chinvex --reconcile` - Fix drift
+When you manage repos with strap, chinvex contexts are created/updated automatically:
+
+- `strap clone <url>` → Creates repo entry in registry **and** registers path in chinvex
+- `strap adopt <path>` → Registers repo in registry **and** adds to chinvex
+- `strap move <name>` → Updates registry path **and** updates chinvex path
+- `strap rename <name>` → Updates registry name **and** updates chinvex context name
+- `strap uninstall <name>` → Removes from registry **and** archives chinvex context
+
+**No manual chinvex commands needed.** The integration is automatic and keeps both systems in perfect sync.
+
+### Scope-Based Context Mapping
+
+Strap maps registry scopes to chinvex contexts:
+- **software** scope → Individual chinvex context per repo (e.g., `chinvex` context for the chinvex repo)
+- **tool** scope → Shared `tools` context (all tool repos share one context)
+- **archive** scope → Shared `archive` context (archived repos)
+
+This means your chinvex contexts automatically reflect your organizational structure.
+
+### Global Opt-Out
+
+Chinvex integration is a machine-level decision. To disable it entirely, set in `config.json`:
+```json
+{
+  "chinvex_integration": false
+}
+```
+
+Once disabled, strap will operate independently without touching chinvex contexts.
+
+### Verification Commands
+
+- `strap contexts` — View all chinvex contexts and their sync status
+- `strap sync-chinvex` — Preview registry/chinvex drift (dry run)
+- `strap sync-chinvex --reconcile` — Fix any drift between registry and chinvex
+
+See [docs/chinvex-integration.md](docs/chinvex-integration.md) for full technical details.
 
 ## Repo Layout
 
