@@ -12,25 +12,25 @@
       "chinvex_context": null,
       "shims": [
         {
-          "baseArgs": null,
-          "venv": "P:\\software\\chinvex-test\\.venv",
           "type": "venv",
-          "ps1Path": "P:\\software\\bin\\chinvex.ps1",
           "name": "chinvex",
-          "exe": "P:\\software\\chinvex-test\\.venv\\Scripts\\chinvex.exe"
+          "baseArgs": null,
+          "exe": "P:\\software\\chinvex-test\\.venv\\Scripts\\chinvex.exe",
+          "ps1Path": "P:\\software\\bin\\chinvex.ps1",
+          "venv": "P:\\software\\chinvex-test\\.venv"
         },
         {
-          "baseArgs": null,
-          "venv": "P:\\software\\chinvex-test\\.venv",
           "type": "venv",
-          "ps1Path": "P:\\software\\bin\\chinvex-mcp.ps1",
           "name": "chinvex-mcp",
-          "exe": "P:\\software\\chinvex-test\\.venv\\Scripts\\chinvex-mcp.exe"
+          "baseArgs": null,
+          "exe": "P:\\software\\chinvex-test\\.venv\\Scripts\\chinvex-mcp.exe",
+          "ps1Path": "P:\\software\\bin\\chinvex-mcp.ps1",
+          "venv": "P:\\software\\chinvex-test\\.venv"
         }
       ],
       "stack": "python",
-      "created_at": "2026-02-04T18:09:52Z",
-      "updated_at": "2026-02-04T18:09:52Z"
+      "created_at": "2026-02-04T18:22:13Z",
+      "updated_at": "2026-02-04T18:22:13Z"
     }
   ]
 }

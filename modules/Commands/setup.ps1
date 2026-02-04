@@ -82,7 +82,7 @@ function Invoke-Setup {
         Write-Host ""
         Write-Host "Docker detected; not auto-running containers (manual step)." -ForegroundColor Yellow
         Pop-Location
-        exit 0
+        return
       } else {
         Die "No recognized stack detected. Use --stack to force selection."
       }
@@ -91,7 +91,7 @@ function Invoke-Setup {
       Write-Host "Multiple stacks detected: $($detectedStacks -join ', ')" -ForegroundColor Yellow
       Write-Host "Use --stack <stack> to select one" -ForegroundColor Yellow
       Pop-Location
-      exit 1
+      Die "Setup failed"
     } else {
       $stack = $detectedStacks[0]
       Info "Detected stack: $stack"
@@ -227,7 +227,7 @@ function Invoke-Setup {
     if ($DryRunMode) {
       Write-Host "DRY RUN - no changes will be made" -ForegroundColor Yellow
       Pop-Location
-      exit 0
+      return
     }
 
     # Confirmation
@@ -236,7 +236,7 @@ function Invoke-Setup {
       if ($response -ne "y") {
         Info "Aborted by user"
         Pop-Location
-        exit 1
+        Die "Setup failed"
       }
     }
 
@@ -253,7 +253,7 @@ function Invoke-Setup {
         Write-Host "ERROR: Command failed with exit code $LASTEXITCODE" -ForegroundColor Red
         Write-Host $output
         Pop-Location
-        exit 2
+        Die "Setup failed"
       }
     }
 
@@ -305,19 +305,19 @@ function Invoke-Setup {
         } catch {
           Write-Host "  ERROR updating registry: $_" -ForegroundColor Red
           Pop-Location
-          exit 3
+          Die "Setup failed"
         }
       }
     }
 
     Pop-Location
-    exit 0
+    return
 
   } catch {
     Write-Host ""
     Write-Host "ERROR: $_" -ForegroundColor Red
     Pop-Location
-    exit 2
+    Die "Setup failed"
   }
 }
 

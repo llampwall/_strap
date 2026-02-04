@@ -160,8 +160,8 @@ function Sync-ChinvexForEntry {
         [string] $ChinvexDepth,
         [Parameter(Mandatory)]
         [string] $Status,
-        [Parameter(Mandatory)]
-        [array] $Tags
+        [AllowEmptyCollection()]
+        [array] $Tags = @()
     )
 
     # Create individual context (no more shared contexts)

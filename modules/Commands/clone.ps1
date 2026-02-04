@@ -8,6 +8,7 @@ function Invoke-Clone {
     [string] $DestPath,
     [switch] $IsTool,
     [switch] $NoChinvex,
+    [switch] $SkipSetup,
     [string] $StrapRootPath
   )
 
@@ -129,6 +130,21 @@ function Invoke-Clone {
     }
   }
 
+  # Run setup automatically (unless --skip-setup)
+  if (-not $SkipSetup -and $stackDetected) {
+    Write-Host ""
+    Info "Running automatic setup for $stackDetected stack..."
+    Push-Location $absolutePath
+    try {
+      Invoke-Setup -StrapRootPath $StrapRootPath -NonInteractive
+    } catch {
+      Warn "Setup failed: $_"
+      Warn "You can run 'strap setup --repo $repoName' manually"
+    } finally {
+      Pop-Location
+    }
+  }
+
   # Auto-discover and create shims
   $autoShims = Invoke-ShimAutoDiscover -RepoEntry $entry -Config $config -Registry $newRegistry
   if ($autoShims.Count -gt 0) {
@@ -147,9 +163,11 @@ function Invoke-Clone {
 
   Ok "Added to registry"
 
-  Info "Next steps:"
-  Info "  strap setup --repo $repoName"
-  if ($autoShims.Count -eq 0) {
+  if (-not $SkipSetup -and $stackDetected -and $autoShims.Count -gt 0) {
+    Write-Host ""
+    Ok "Ready to use! Try: $($autoShims[0].name) --help"
+  } elseif ($autoShims.Count -eq 0) {
+    Info "Next steps:"
     Info "  strap shim <name> --exe <path> --repo $repoName  # Create shims manually if needed"
   }
 }

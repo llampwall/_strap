@@ -8,6 +8,7 @@ function Invoke-Adopt {
     [switch] $ForceTool,
     [switch] $ForceSoftware,
     [switch] $NoChinvex,
+    [switch] $SkipSetup,
     [switch] $NonInteractive,
     [switch] $DryRunMode,
     [string] $StrapRootPath
@@ -175,6 +176,21 @@ function Invoke-Adopt {
     }
   }
 
+  # Run setup automatically (unless --skip-setup)
+  if (-not $SkipSetup -and $stackDetected) {
+    Write-Host ""
+    Info "Running automatic setup for $stackDetected stack..."
+    Push-Location $resolvedPath
+    try {
+      Invoke-Setup -StrapRootPath $StrapRootPath -NonInteractive
+    } catch {
+      Warn "Setup failed: $_"
+      Warn "You can run 'strap setup --repo $name' manually"
+    } finally {
+      Pop-Location
+    }
+  }
+
   # Auto-discover and create shims
   $autoShims = Invoke-ShimAutoDiscover -RepoEntry $entry -Config $config -Registry $newRegistry
   if ($autoShims.Count -gt 0) {
@@ -195,5 +211,10 @@ function Invoke-Adopt {
   Info "Depth: $depth, Status: $status, Tags: $($tags -join ', ')"
   if ($url) { Info "Remote: $url" }
   if ($stackDetected) { Info "Stack: $stackDetected" }
+
+  if (-not $SkipSetup -and $stackDetected -and $autoShims.Count -gt 0) {
+    Write-Host ""
+    Ok "Ready to use! Try: $($autoShims[0].name) --help"
+  }
 }
 

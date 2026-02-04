@@ -124,6 +124,7 @@ function Apply-ExtraArgs {
       "--dest" { if ($i + 1 -lt $ArgsList.Count) { $script:Dest = $ArgsList[$i + 1]; $i++; continue } }
       "--software" { $script:Software = $true; continue }
       "--no-chinvex" { $script:NoChinvex = $true; continue }
+      "--skip-setup" { $script:SkipSetup = $true; continue }
       "--json" { $script:Json = $true; continue }
       "--yes" { $script:Yes = $true; continue }
       "--dry-run" { $script:DryRun = $true; continue }
@@ -167,17 +168,19 @@ USAGE:
     strap <command> [options]
 
 COMMANDS:
-    clone <url> [--tool|--software] [--no-chinvex]
-        Clone and register a repository
+    clone <url> [--tool|--software] [--no-chinvex] [--skip-setup]
+        Clone and register a repository (auto-runs setup + creates shims)
         --tool        Use tool preset (depth=light, status=stable, tags=[third-party])
         --software    Use software preset (depth=full, status=active, default)
         --no-chinvex  Skip chinvex integration
+        --skip-setup  Skip automatic dependency installation
 
-    adopt [--path <dir>] [--tool|--software] [--no-chinvex]
-        Adopt existing repository into registry
+    adopt [--path <dir>] [--tool|--software] [--no-chinvex] [--skip-setup]
+        Adopt existing repository into registry (auto-runs setup + creates shims)
         --tool        Use tool preset
         --software    Use software preset
         --no-chinvex  Skip chinvex integration
+        --skip-setup  Skip automatic dependency installation
 
     move <name> --dest <path> [--no-chinvex]
         Move repository to new location
@@ -1313,7 +1316,7 @@ if ($RepoName -eq "adopt") {
   }
 
   $targetPath = if ($pathProvided) { $Path } else { $null }
-  Invoke-Adopt -TargetPath $targetPath -CustomName $Name -ForceTool:$Tool.IsPresent -ForceSoftware:$Software.IsPresent -NonInteractive:$Yes.IsPresent -DryRunMode:$DryRun.IsPresent -StrapRootPath $TemplateRoot
+  Invoke-Adopt -TargetPath $targetPath -CustomName $Name -ForceTool:$Tool.IsPresent -ForceSoftware:$Software.IsPresent -NoChinvex:$NoChinvex.IsPresent -SkipSetup:$SkipSetup.IsPresent -NonInteractive:$Yes.IsPresent -DryRunMode:$DryRun.IsPresent -StrapRootPath $TemplateRoot
   exit 0
 }
 
@@ -1328,7 +1331,7 @@ if ($RepoName -eq "clone") {
       }
     }
   }
-  Invoke-Clone -GitUrl $gitUrl -CustomName $Name -DestPath $Dest -IsTool:$Tool.IsPresent -StrapRootPath $TemplateRoot
+  Invoke-Clone -GitUrl $gitUrl -CustomName $Name -DestPath $Dest -IsTool:$Tool.IsPresent -NoChinvex:$NoChinvex.IsPresent -SkipSetup:$SkipSetup.IsPresent -StrapRootPath $TemplateRoot
   exit 0
 }
 
