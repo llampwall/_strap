@@ -7,7 +7,7 @@
     "archive": "P:\\software\\_archive"
   },
   "defaults": {
-    "pwshExe": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+    "pwshExe": "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.5.4.0_x64__8wekyb3d8bbwe\\pwsh.exe",
     "nodeExe": "C:\\nvm4w\\nodejs\\node.exe"
   },
   "registry": "P:\\software\\_strap\\build\\registry.json"
