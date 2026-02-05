@@ -131,18 +131,43 @@ function Invoke-Clone {
   }
 
   # Run setup automatically (unless --skip-setup)
+  $setupSucceeded = $false
+  $setupError = $null
   if (-not $SkipSetup -and $stackDetected) {
     Write-Host ""
     Info "Running automatic setup for $stackDetected stack..."
     Push-Location $absolutePath
     try {
       Invoke-Setup -StrapRootPath $StrapRootPath -NonInteractive
+      $setupSucceeded = $true
     } catch {
+      $setupError = $_.Exception.Message
       Warn "Setup failed: $_"
       Warn "You can run 'strap setup --repo $repoName' manually"
     } finally {
       Pop-Location
     }
+
+    # Update entry with setup status
+    if ($stackDetected) {
+      $setupStatus = [PSCustomObject]@{
+        result = if ($setupSucceeded) { "succeeded" } else { "failed" }
+        error = $setupError
+        last_attempt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+      }
+      $entry | Add-Member -NotePropertyName 'setup' -NotePropertyValue $setupStatus -Force
+    }
+  } elseif ($SkipSetup -and $stackDetected) {
+    # Setup was skipped
+    $setupStatus = [PSCustomObject]@{
+      result = "skipped"
+      error = $null
+      last_attempt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    }
+    $entry | Add-Member -NotePropertyName 'setup' -NotePropertyValue $setupStatus -Force
+  } else {
+    # No stack detected, setup not attempted
+    $entry | Add-Member -NotePropertyName 'setup' -NotePropertyValue $null -Force
   }
 
   # Auto-discover and create shims

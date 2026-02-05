@@ -279,23 +279,24 @@ function Invoke-Setup {
         # Update timestamp
         $currentEntry.updated_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 
-        # Add/update setup metadata
-        if ($currentEntry.PSObject.Properties['stack_detected']) {
-          $currentEntry.stack_detected = $stack
-        } else {
-          $currentEntry | Add-Member -NotePropertyName 'stack_detected' -NotePropertyValue $stack -Force
+        # Update stack array
+        if (-not $currentEntry.PSObject.Properties['stack']) {
+          $currentEntry | Add-Member -NotePropertyName 'stack' -NotePropertyValue @() -Force
+        }
+        if ($currentEntry.stack -notcontains $stack) {
+          $currentEntry.stack = @($stack)
         }
 
-        if ($currentEntry.PSObject.Properties['setup_last_run_at']) {
-          $currentEntry.setup_last_run_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-        } else {
-          $currentEntry | Add-Member -NotePropertyName 'setup_last_run_at' -NotePropertyValue ((Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")) -Force
+        # Update setup status (nested object)
+        $setupStatus = [PSCustomObject]@{
+          result = "succeeded"
+          error = $null
+          last_attempt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
         }
-
-        if ($currentEntry.PSObject.Properties['setup_status']) {
-          $currentEntry.setup_status = "success"
+        if ($currentEntry.PSObject.Properties['setup']) {
+          $currentEntry.setup = $setupStatus
         } else {
-          $currentEntry | Add-Member -NotePropertyName 'setup_status' -NotePropertyValue "success" -Force
+          $currentEntry | Add-Member -NotePropertyName 'setup' -NotePropertyValue $setupStatus -Force
         }
 
         # Save registry
@@ -316,6 +317,35 @@ function Invoke-Setup {
   } catch {
     Write-Host ""
     Write-Host "ERROR: $_" -ForegroundColor Red
+
+    # Update registry with failure status if entry exists
+    if ($registryEntry) {
+      $entryIndex = -1
+      for ($i = 0; $i -lt $registry.Count; $i++) {
+        if ($registry[$i].id -eq $registryEntry.id) {
+          $entryIndex = $i
+          break
+        }
+      }
+
+      if ($entryIndex -ne -1) {
+        $currentEntry = $registry[$entryIndex]
+        $setupStatus = [PSCustomObject]@{
+          result = "failed"
+          error = $_.Exception.Message
+          last_attempt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+        }
+        if ($currentEntry.PSObject.Properties['setup']) {
+          $currentEntry.setup = $setupStatus
+        } else {
+          $currentEntry | Add-Member -NotePropertyName 'setup' -NotePropertyValue $setupStatus -Force
+        }
+        try {
+          Save-Registry $config $registry
+        } catch {}
+      }
+    }
+
     Pop-Location
     Die "Setup failed"
   }

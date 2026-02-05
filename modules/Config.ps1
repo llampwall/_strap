@@ -120,6 +120,13 @@ function Load-Registry($configObj) {
       Save-Registry $configObj $json.repos
     }
 
+    # Add setup field defaults for entries missing it
+    foreach ($entry in $json.repos) {
+      if (-not $entry.PSObject.Properties['setup']) {
+        $entry | Add-Member -NotePropertyName setup -NotePropertyValue $null -Force
+      }
+    }
+
     # Force array output using comma operator (prevents PS from unwrapping single-element arrays)
     return ,@($json.repos | ForEach-Object { $_ })
   }

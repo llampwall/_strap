@@ -183,6 +183,7 @@ strap update --all [--tool] [--software] [--yes] [--dry-run] [--rebase] [--stash
 strap shim <name> --- <command...> [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
 strap shim <name> --cmd "<command>" [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
 strap uninstall <name> [--yes]
+strap purge [--cleanup-chinvex] [--yes] [--dry-run]
 strap doctor [--json]
 # strap migrate [--yes] [--dry-run] [--backup] [--json] [--to <version>] [--plan]
 # strap snapshot [--output <path>] [--scan <dir>...]
@@ -276,6 +277,13 @@ strap doctor [--json]
 **uninstall**
 - `<name>` — registered repo name to uninstall
 - `--yes` — skip confirmation prompts
+
+**purge**
+- Clear the entire registry (removes all repository entries)
+- `--cleanup-chinvex` — also delete associated chinvex contexts for all repos
+- `--yes` — skip confirmation prompts
+- `--dry-run` — preview what would be removed without making changes
+- NOTE: This command only clears the registry; it does NOT delete folders or shims. Use `strap uninstall` to fully remove individual repositories.
 
 **doctor**
 - `--json` — output structured JSON instead of human-readable format
@@ -463,6 +471,15 @@ strap shim serve --cmd "python -m http.server 8080 --bind 127.0.0.1"
 # Uninstall a registered repo (removes directory and shims)
 strap uninstall youtube-md --yes
 
+# Preview what would be removed if you purge the registry
+strap purge --dry-run
+
+# Clear the entire registry (keeps folders and shims intact)
+strap purge --yes
+
+# Clear registry and clean up all chinvex contexts
+strap purge --cleanup-chinvex --yes
+
 # Discover and adopt all repos in a directory
 strap adopt --scan C:\Code --recursive
 
@@ -557,16 +574,36 @@ Lifecycle management uses a JSON registry at `registry.json` (in the strap direc
 - `url` — git remote URL (if available)
 - `chinvex_context` — chinvex context name (usually matches repo name)
 - `shims` — array of shim metadata objects (see Shim System section)
+- `setup` — setup status object with fields: `result` ("succeeded", "failed", "skipped", or null), `error` (error message if failed), `last_attempt` (ISO 8601 timestamp)
+- `stack` — array of detected stack types (e.g., `["python"]`, `["node"]`)
 - `created_at` — ISO 8601 timestamp
 - `updated_at` — ISO 8601 timestamp
 - `last_pull_at` — ISO 8601 timestamp of last update (added by `strap update`)
 - `last_head` — git commit hash after last update (added by `strap update`)
 - `last_remote` — remote tracking branch hash after last update (added by `strap update`)
-- `stack_detected` — detected stack type (added by `strap setup`)
-- `setup_last_run_at` — ISO 8601 timestamp of last setup (added by `strap setup`)
-- `setup_status` — setup execution status: "success" or "fail" (added by `strap setup`)
 - `archived_at` — ISO 8601 timestamp when moved to archive (null if not archived)
 - `last_commit` — git commit hash for audit index optimization (null if not a git repo)
+
+**Setup Status Tracking:**
+The `setup` field tracks the health of automated setup operations:
+```json
+{
+  "setup": {
+    "result": "succeeded",
+    "error": null,
+    "last_attempt": "2026-02-05T10:15:30Z"
+  }
+}
+```
+- `result` values:
+  - `"succeeded"` — setup completed successfully
+  - `"failed"` — setup failed (see `error` field)
+  - `"skipped"` — setup was explicitly skipped (--skip-setup flag)
+  - `null` — no setup has been attempted
+- `error` — error message if setup failed, otherwise null
+- `last_attempt` — ISO 8601 timestamp of the most recent setup attempt
+
+The setup status is displayed in the HEALTH column of `strap list` output.
 
 **V2→V3 Migration:**
 The V2 `scope` field has been replaced with three orthogonal metadata fields for better flexibility:

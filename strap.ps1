@@ -195,6 +195,13 @@ COMMANDS:
         Remove repository (archives chinvex context for software repos)
         --no-chinvex  Skip chinvex cleanup
 
+    purge [--cleanup-chinvex] [--yes] [--dry-run]
+        Clear entire registry (removes all repository entries)
+        --cleanup-chinvex  Also delete associated chinvex contexts
+        --yes             Skip confirmation prompt
+        --dry-run         Preview changes without applying
+        NOTE: Does not delete folders or shims, only registry entries
+
     list
         List all registered repositories
 
@@ -1456,6 +1463,16 @@ if ($RepoName -eq "uninstall") {
     }
   }
   Invoke-Uninstall -NameToRemove $nameToRemove -NonInteractive:$Yes.IsPresent -DryRunMode:$DryRun.IsPresent -PreserveFolder:$KeepFolder.IsPresent -PreserveShims:$KeepShims.IsPresent -StrapRootPath $TemplateRoot
+  exit 0
+}
+
+if ($RepoName -eq "purge") {
+  # Parse --cleanup-chinvex flag
+  $cleanupChinvex = $false
+  if ($ExtraArgs -contains "--cleanup-chinvex") {
+    $cleanupChinvex = $true
+  }
+  Invoke-Purge -NonInteractive:$Yes.IsPresent -DryRunMode:$DryRun.IsPresent -NoChinvex:$NoChinvex.IsPresent -CleanupChinvex:$cleanupChinvex -StrapRootPath $TemplateRoot
   exit 0
 }
 
