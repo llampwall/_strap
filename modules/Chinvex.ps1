@@ -148,6 +148,8 @@ function Sync-ChinvexForEntry {
         Lifecycle state: 'active', 'stable', or 'dormant'.
     .PARAMETER Tags
         Free-form tags for grouping.
+    .PARAMETER RebuildIndex
+        If set, passes --rebuild-index to force full reingest (used when depth changes).
     .OUTPUTS
         [string] Context name on success, $null on failure.
     #>
@@ -161,7 +163,8 @@ function Sync-ChinvexForEntry {
         [Parameter(Mandatory)]
         [string] $Status,
         [AllowEmptyCollection()]
-        [array] $Tags = @()
+        [array] $Tags = @(),
+        [switch] $RebuildIndex
     )
 
     # Create individual context (no more shared contexts)
@@ -189,6 +192,11 @@ function Sync-ChinvexForEntry {
     if ($Tags.Count -gt 0) {
         $baseArgs += "--tags"
         $baseArgs += ($Tags -join ",")
+    }
+
+    # Add --rebuild-index if requested (forces full reingest when depth changes)
+    if ($RebuildIndex) {
+        $baseArgs += "--rebuild-index"
     }
 
     $ingested = Invoke-Chinvex -Arguments $baseArgs

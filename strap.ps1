@@ -182,6 +182,18 @@ COMMANDS:
         --no-chinvex  Skip chinvex integration
         --skip-setup  Skip automatic dependency installation
 
+    configure <name> [--depth <light|full>] [--status <status>] [--tags <tag1,tag2>]
+        Modify repository metadata after adoption/cloning
+        --depth <value>     Set chinvex depth (light or full)
+        --status <value>    Set status (active, stable, archived, deprecated)
+        --tags <tags>       Replace tags (comma-separated)
+        --add-tags <tags>   Add tags without removing existing ones
+        --remove-tags <tags> Remove specific tags
+        --clear-tags        Remove all tags
+        --json              Output as JSON
+        --dry-run           Preview changes without applying
+        --yes               Skip confirmation prompt
+
     move <name> --dest <path> [--no-chinvex]
         Move repository to new location
         --no-chinvex  Skip chinvex path updates
@@ -253,6 +265,8 @@ EXAMPLES:
     strap clone https://github.com/user/myproject
     strap clone https://github.com/user/mytool --tool
     strap adopt --path P:\software\existing-repo
+    strap configure myrepo --depth light --status stable
+    strap configure myrepo --add-tags third-party,archived
     strap move myrepo --dest P:\software\subdir
     strap contexts
     strap sync-chinvex --reconcile
@@ -1324,6 +1338,69 @@ if ($RepoName -eq "adopt") {
 
   $targetPath = if ($pathProvided) { $Path } else { $null }
   Invoke-Adopt -TargetPath $targetPath -CustomName $Name -ForceTool:$Tool.IsPresent -ForceSoftware:$Software.IsPresent -NoChinvex:$NoChinvex.IsPresent -SkipSetup:$SkipSetup.IsPresent -NonInteractive:$Yes.IsPresent -DryRunMode:$DryRun.IsPresent -StrapRootPath $TemplateRoot
+  exit 0
+}
+
+if ($RepoName -eq "configure") {
+  # Extract name from ExtraArgs
+  $nameToConfigure = $null
+  if ($ExtraArgs -and $ExtraArgs.Count -gt 0) {
+    foreach ($arg in $ExtraArgs) {
+      if ($arg -notmatch '^--') {
+        $nameToConfigure = $arg
+        break
+      }
+    }
+  }
+
+  # Parse configure-specific flags
+  $newDepth = $null
+  $newStatus = $null
+  $newTags = $null
+  $clearTags = $false
+  $addTags = $false
+  $removeTags = $false
+
+  for ($i = 0; $i -lt $ExtraArgs.Count; $i++) {
+    $arg = $ExtraArgs[$i]
+    switch ($arg) {
+      "--depth" {
+        if ($i + 1 -lt $ExtraArgs.Count) {
+          $newDepth = $ExtraArgs[++$i]
+        }
+      }
+      "--status" {
+        if ($i + 1 -lt $ExtraArgs.Count) {
+          $newStatus = $ExtraArgs[++$i]
+        }
+      }
+      "--tags" {
+        if ($i + 1 -lt $ExtraArgs.Count) {
+          $newTags = $ExtraArgs[++$i] -split ','
+        }
+      }
+      "--add-tags" {
+        if ($i + 1 -lt $ExtraArgs.Count) {
+          $newTags = $ExtraArgs[++$i] -split ','
+          $addTags = $true
+        }
+      }
+      "--remove-tags" {
+        if ($i + 1 -lt $ExtraArgs.Count) {
+          $newTags = $ExtraArgs[++$i] -split ','
+          $removeTags = $true
+        }
+      }
+      "--clear-tags" {
+        $clearTags = $true
+      }
+    }
+  }
+
+  Invoke-Configure -NameToConfigure $nameToConfigure -NewDepth $newDepth -NewStatus $newStatus `
+      -NewTags $newTags -ClearTags:$clearTags -AddTags:$addTags -RemoveTags:$removeTags `
+      -NonInteractive:$Yes.IsPresent -DryRunMode:$DryRun.IsPresent -OutputJson:$Json.IsPresent `
+      -StrapRootPath $TemplateRoot
   exit 0
 }
 
