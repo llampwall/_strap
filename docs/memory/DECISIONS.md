@@ -4,6 +4,7 @@
 # Decisions
 
 ## Recent (last 30 days)
+- Added configure command for post-ingestion metadata updates (1b551bc)
 - Added setup status tracking with health visibility (09af3e0)
 - Enabled full chinvex ingestion during adopt/clone (16cac94)
 - Implemented instant system-wide availability via auto-setup (f6c2f14)
@@ -14,6 +15,12 @@
 - Completed chinvex integration (TDD-driven, 14 tasks) (bd509da)
 
 ## 2026-02
+
+### 2026-02-05 — Configure command for post-ingestion metadata updates
+
+- **Why:** Need ability to modify chinvex metadata (depth, status, tags) after initial clone/adopt without manual registry editing
+- **Impact:** Added `strap configure` command with intelligent chinvex sync optimization - metadata-only changes use lightweight sync-metadata-from-strap; depth changes trigger full reingest with --rebuild-index flag
+- **Evidence:** 1b551bc
 
 ### 2026-02-05 — Setup status tracking to registry
 

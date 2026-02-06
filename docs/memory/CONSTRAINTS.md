@@ -21,6 +21,7 @@
 - Use `--cmd` for commands with single-letter flags (avoids PowerShell parameter binding)
 - Registry must be atomic (save only after successful operations)
 - Never modify venv shims manually (regenerate with `strap shim --regen`)
+- Metadata-only changes use sync-metadata-from-strap; depth changes trigger full reingest with --rebuild-index (updated 2026-02-05)
 
 ## Key Facts
 - Shim types: simple (direct exec), venv (Python), node (Node.js PATH setup)
@@ -29,6 +30,7 @@
 - Node entry point source: package.json bin field
 - Setup status values: succeeded, failed, skipped, null
 - Metadata presets: --tool (light/stable/third-party), --software (full/active/[])
+- Configure command flags: --depth, --status, --tags, --add-tags, --remove-tags, --yes, --dry-run, --json
 
 ## Hazards
 - PowerShell unwraps single-element arrays (use comma operator: `,$array`)
