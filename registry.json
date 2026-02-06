@@ -303,7 +303,15 @@
       "status": "active",
       "tags": [],
       "chinvex_context": "_strap",
-      "shims": [],
+      "shims": [
+        {
+          "name": "pm2",
+          "baseArgs": [],
+          "ps1Path": "P:\\software\\bin\\pm2.ps1",
+          "exe": "P:\\software\\_node-tools\\pm2\\node_modules\\.bin\\pm2.cmd",
+          "type": "simple"
+        }
+      ],
       "stack": null,
       "last_head": "09af3e0aa44b80bd16fdeecd016478a660ca6b7a",
       "default_branch": null,
