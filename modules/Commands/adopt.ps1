@@ -117,6 +117,15 @@ function Invoke-Adopt {
     Pop-Location
   }
 
+  # Detect Python version requirement if Python stack
+  $pythonVersion = $null
+  if ($stackDetected -eq "python") {
+    $pythonVersion = Get-RequiredPythonVersion -RepoPath $resolvedPath
+    if ($pythonVersion) {
+      Write-Host "  Detected Python version requirement: $pythonVersion" -ForegroundColor Cyan
+    }
+  }
+
   # Dry run: show what would happen
   if ($DryRunMode) {
     Info "[DRY RUN] Would adopt: $resolvedPath"
@@ -142,6 +151,7 @@ function Invoke-Adopt {
     chinvex_context = $null  # Default, updated below if sync succeeds
     shims           = @()
     stack           = if ($stackDetected) { @($stackDetected) } else { @() }
+    python_version  = $pythonVersion  # Only set for Python projects
     last_head       = $lastHead
     default_branch  = $defaultBranch
     created_at      = $timestamp

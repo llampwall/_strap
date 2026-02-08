@@ -127,6 +127,75 @@ strap doctor
 - Shim creation: generates `.ps1` + `.cmd` launchers in `P:\software\bin` (one-time PATH setup)
 - Venv integration: Python shims point to `.venv\Scripts\tool.exe`, Node shims use `node.exe + entrypoint`
 
+### Python Version Management
+
+**Automatic Python version detection and installation** — strap automatically detects required Python versions and installs them for you.
+
+**How it works:**
+
+```powershell
+# Clone a Python project with version requirements
+strap clone https://github.com/user/python-project
+# → Detects Python version from .python-version, pyproject.toml, or requirements.txt
+# → Automatically installs Python 3.11.14 to P:\software\_python-versions\3.11.14
+# → Creates venv using correct Python version
+# → Tool ready to use immediately!
+```
+
+**Version detection sources (in priority order):**
+
+1. **`.python-version` file** — exact version or constraint (e.g., `3.11.14` or `>=3.11`)
+2. **`pyproject.toml`** — `requires-python` field (e.g., `requires-python = ">=3.11"`)
+3. **`requirements.txt`** — header comment (e.g., `# requires: python>=3.11`)
+
+**Where Python versions are installed:**
+
+All managed Python versions go to `P:\software\_python-versions\<version>\`:
+```
+P:\software\_python-versions\
+  3.11.14\
+    python.exe
+    Scripts\
+    Lib\
+  3.12.8\
+    python.exe
+    Scripts\
+    Lib\
+```
+
+**Manual Python version specification:**
+
+```powershell
+# Force a specific Python version during setup
+strap setup --repo myproject --python "py -3.11" --yes
+
+# Use a specific Python executable path
+strap setup --repo myproject --python "C:\Python311\python.exe" --yes
+```
+
+**Version stored in registry:**
+
+Once detected, the Python version requirement is stored in the registry for future setups:
+
+```json
+{
+  "id": "Deep-Live-Cam",
+  "stack": "python",
+  "python_version": "3.11",
+  "setup": {
+    "result": "succeeded",
+    ...
+  }
+}
+```
+
+**Benefits:**
+
+- **No manual Python management** — strap handles everything
+- **Isolated versions** — each project uses exactly the Python version it needs
+- **Reproducible environments** — same setup across machines
+- **Fast setup** — automatic detection and installation means zero configuration
+
 <!--
 ### Consolidation (Migrate Existing Repos)
 
