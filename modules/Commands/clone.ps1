@@ -85,15 +85,6 @@ function Invoke-Clone {
     Pop-Location
   }
 
-  # Detect Python version requirement if Python stack
-  $pythonVersion = $null
-  if ($stackDetected -eq "python") {
-    $pythonVersion = Get-RequiredPythonVersion -RepoPath $absolutePath
-    if ($pythonVersion) {
-      Write-Host "  Detected Python version requirement: $pythonVersion" -ForegroundColor Cyan
-    }
-  }
-
   # Create new entry with V3 metadata fields
   $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
   $entry = [PSCustomObject]@{
@@ -107,7 +98,6 @@ function Invoke-Clone {
     chinvex_context = $null  # Default, updated below if sync succeeds
     shims           = @()
     stack           = if ($stackDetected) { $stackDetected } else { @() }
-    python_version  = $pythonVersion  # Only set for Python projects
     created_at      = $timestamp
     updated_at      = $timestamp
   }

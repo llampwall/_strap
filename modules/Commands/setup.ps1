@@ -108,36 +108,8 @@ function Invoke-Setup {
       "python" {
         # Defaults
         $venvDir = if ($VenvPath) { $VenvPath } else { ".venv" }
+        $pythonCmd = if ($PythonExe) { $PythonExe } else { "python" }
         $useUvFlag = if ($PSBoundParameters.ContainsKey('UseUv')) { $UseUv } else { $true }
-
-        # Auto-detect required Python version and find/install if needed
-        $pythonCmd = "python"  # Default fallback
-        if (-not $PythonExe) {
-          # First check if version is stored in registry
-          $requiredVersion = $null
-          if ($registryEntry -and $registryEntry.PSObject.Properties['python_version']) {
-            $requiredVersion = $registryEntry.python_version
-            Write-Host "  Using stored Python version requirement: $requiredVersion" -ForegroundColor Cyan
-          } else {
-            # Detect from project files
-            $requiredVersion = Get-RequiredPythonVersion -RepoPath $resolvedPath
-            if ($requiredVersion) {
-              Write-Host "  Detected Python version requirement: $requiredVersion" -ForegroundColor Cyan
-            }
-          }
-
-          if ($requiredVersion) {
-            $pythonPath = Find-Or-InstallPython -Requirement $requiredVersion -NonInteractive:$NonInteractive
-            if ($pythonPath) {
-              $pythonCmd = $pythonPath
-            } else {
-              Write-Host "  WARNING: Could not satisfy Python version requirement $requiredVersion" -ForegroundColor Yellow
-              Write-Host "  Falling back to default 'python' command" -ForegroundColor Yellow
-            }
-          }
-        } else {
-          $pythonCmd = $PythonExe
-        }
 
         $venvPython = Join-Path $venvDir "Scripts\python.exe"
 
@@ -313,15 +285,6 @@ function Invoke-Setup {
         }
         if ($currentEntry.stack -notcontains $stack) {
           $currentEntry.stack = @($stack)
-        }
-
-        # Store Python version if detected (for Python stack)
-        if ($stack -eq "python" -and $requiredVersion) {
-          if (-not $currentEntry.PSObject.Properties['python_version']) {
-            $currentEntry | Add-Member -NotePropertyName 'python_version' -NotePropertyValue $requiredVersion -Force
-          } else {
-            $currentEntry.python_version = $requiredVersion
-          }
         }
 
         # Update setup status (nested object)

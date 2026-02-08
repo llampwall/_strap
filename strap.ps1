@@ -83,7 +83,6 @@ $ModulesPath = Join-Path $PSScriptRoot "modules"
 . (Join-Path $ModulesPath "References.ps1")
 . (Join-Path $ModulesPath "Audit.ps1")
 . (Join-Path $ModulesPath "Consolidate.ps1")
-. (Join-Path $ModulesPath "PythonVersion.ps1")
 $CommandsPath = Join-Path $ModulesPath "Commands"
 Get-ChildItem -Path $CommandsPath -Filter "*.ps1" | ForEach-Object {
     . $_.FullName
