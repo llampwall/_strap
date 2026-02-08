@@ -16,11 +16,12 @@
 
 ## 2026-02
 
-### 2026-02-08 — Automatic Python version detection and installation
+### 2026-02-08 — pyenv-win integration for Python version management
 
 - **Why:** Zero manual Python management needed - eliminate manual version installation and conda dependency
-- **Impact:** Added comprehensive Python version management: auto-detects from .python-version/pyproject.toml/requirements.txt; downloads and installs to P:\software\_python-versions; stores python_version in registry; integrates with adopt/clone/setup; uses full installers (not embeddable) for venv support
-- **Evidence:** a910b75
+- **Impact:** Vendored pyenv-win to P:\software\_python-tools\pyenv-win; created PyenvIntegration.ps1 module with 11 functions; Python versions auto-detected from .python-version/pyproject.toml/requirements.txt with major.minor → latest patch resolution; validation after install; integrated with doctor/adopt/clone/setup; stores python_version in registry; conservative pip default
+- **Evidence:** Complete rewrite after a910b75 failed; pyenv-win ignores PYENV_ROOT (hardcoded in VBScript); system-wide shim at P:\software\bin\pyenv.{ps1,cmd}
+- **Key Fixes:** Dynamic version lookup via pyenv install --list; post-install validation; robust command execution via pwsh -NoProfile -Command; shim path duplication fix; exit code -1073741515 (DLL not found) resolved by using correct pyenv-win directory structure
 
 ### 2026-02-05 — Vendor PM2 and create system-wide shim
 

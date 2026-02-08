@@ -106,6 +106,8 @@ function Invoke-Adopt {
 
   # Detect stack (best-effort)
   $stackDetected = $null
+  $pythonVersion = $null
+
   Push-Location $resolvedPath
   try {
     if (Test-Path "pyproject.toml") { $stackDetected = "python" }
@@ -113,6 +115,14 @@ function Invoke-Adopt {
     elseif (Test-Path "package.json") { $stackDetected = "node" }
     elseif (Test-Path "Cargo.toml") { $stackDetected = "rust" }
     elseif (Test-Path "go.mod") { $stackDetected = "go" }
+
+    # Detect Python version if Python stack
+    if ($stackDetected -eq "python") {
+      $pythonVersion = Get-PythonVersionFromFile -RepoPath $resolvedPath
+      if ($pythonVersion) {
+        Info "Detected Python version: $pythonVersion"
+      }
+    }
   } finally {
     Pop-Location
   }
@@ -126,6 +136,7 @@ function Invoke-Adopt {
     Info "[DRY RUN] Tags: $($tags -join ', ')"
     Info "[DRY RUN] URL: $url"
     Info "[DRY RUN] Stack: $stackDetected"
+    if ($pythonVersion) { Info "[DRY RUN] Python version: $pythonVersion" }
     return
   }
 
@@ -142,6 +153,7 @@ function Invoke-Adopt {
     chinvex_context = $null  # Default, updated below if sync succeeds
     shims           = @()
     stack           = if ($stackDetected) { @($stackDetected) } else { @() }
+    python_version  = $pythonVersion
     last_head       = $lastHead
     default_branch  = $defaultBranch
     created_at      = $timestamp

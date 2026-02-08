@@ -173,6 +173,38 @@ function Invoke-Shim {
         Die "Registry entry '$RegistryEntryName' not found."
     }
 
+    # Auto-detect repo context when --repo is specified
+    if ($RegistryEntryName) {
+        # Auto-set working directory to repo path if not explicitly provided
+        if (-not $WorkingDir) {
+            $WorkingDir = $repoEntry.path
+            Write-Host "  Auto-detected working directory: $WorkingDir" -ForegroundColor Cyan
+        }
+
+        # Auto-detect venv for Python repos
+        if (-not $VenvPath -and $repoEntry.stack -eq "python") {
+            $candidates = @(".venv", "venv", ".virtualenv")
+            foreach ($candidate in $candidates) {
+                $testPath = Join-Path $repoEntry.path $candidate
+                $pythonExe = Join-Path $testPath "Scripts\python.exe"
+                if (Test-Path $pythonExe) {
+                    $VenvPath = $testPath
+                    Write-Host "  Auto-detected venv: $VenvPath" -ForegroundColor Cyan
+                    break
+                }
+            }
+        }
+
+        # Auto-determine shim type if not explicitly set
+        if ($ShimType -eq "simple") {
+            # If we found a venv and the command involves Python, use venv type
+            if ($VenvPath -and ($Cmd -match '\bpython\b' -or $Exe -match '\bpython\b')) {
+                $ShimType = "venv"
+                Write-Host "  Auto-detected shim type: venv" -ForegroundColor Cyan
+            }
+        }
+    }
+
     # Parse command
     if ($Cmd -and $Exe) {
         Die "Cannot use --cmd with --exe. Pick one."
@@ -392,9 +424,20 @@ function Resolve-ShimVenvExe {
 
     $scriptsDir = Join-Path $VenvPath "Scripts"
 
-    if ($Exe -eq "python") {
+    # If exe is already an absolute path, use it as-is
+    if ([System.IO.Path]::IsPathRooted($Exe)) {
+        $resolved = $Exe
+    }
+    # If exe is just "python", resolve to venv's python.exe
+    elseif ($Exe -eq "python") {
         $resolved = Join-Path $scriptsDir "python.exe"
-    } else {
+    }
+    # If exe already has .exe extension, just prepend Scripts dir
+    elseif ($Exe -match '\.exe$') {
+        $resolved = Join-Path $scriptsDir $Exe
+    }
+    # Otherwise, assume it's a bare executable name
+    else {
         $resolved = Join-Path $scriptsDir "$Exe.exe"
     }
 

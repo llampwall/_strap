@@ -318,6 +318,90 @@
       "created_at": "2026-02-05T12:02:48Z",
       "updated_at": "2026-02-05T12:02:48Z",
       "setup": null
+    },
+    {
+      "id": "heretic",
+      "name": "heretic",
+      "url": "https://github.com/p-e-w/heretic",
+      "path": "P:\\software\\heretic",
+      "chinvex_depth": "full",
+      "status": "active",
+      "tags": [],
+      "chinvex_context": "heretic",
+      "shims": {
+        "type": "venv",
+        "name": "heretic",
+        "venv": "P:\\software\\heretic\\.venv",
+        "baseArgs": null,
+        "exe": "P:\\software\\heretic\\.venv\\Scripts\\heretic.exe",
+        "ps1Path": "P:\\software\\bin\\heretic.ps1"
+      },
+      "stack": "python",
+      "created_at": "2026-02-07T01:13:42Z",
+      "updated_at": "2026-02-07T01:13:42Z",
+      "setup": {
+        "result": "failed",
+        "error": "Setup failed",
+        "last_attempt": "2026-02-07T01:14:16Z"
+      }
+    },
+    {
+      "id": "test-py311",
+      "name": "test-py311",
+      "url": null,
+      "path": "P:\\software\\test-py311",
+      "chinvex_depth": "full",
+      "status": "active",
+      "tags": [],
+      "chinvex_context": "test-py311",
+      "shims": [],
+      "stack": "python",
+      "python_version": "3.11",
+      "last_head": "4e31858e8d2f54a657482434346578c99572f1e0",
+      "default_branch": null,
+      "created_at": "2026-02-08T15:14:56Z",
+      "updated_at": "2026-02-08T15:14:56Z",
+      "setup": {
+        "result": "failed",
+        "error": "Setup failed",
+        "last_attempt": "2026-02-08T15:15:22Z"
+      }
+    },
+    {
+      "id": "Deep-Live-Cam",
+      "name": "Deep-Live-Cam",
+      "url": "https://github.com/hacksider/Deep-Live-Cam.git",
+      "path": "P:\\software\\Deep-Live-Cam",
+      "chinvex_depth": "full",
+      "status": "active",
+      "tags": [],
+      "chinvex_context": "Deep-Live-Cam",
+      "shims": [
+        {
+          "exe": "P:\\software\\Deep-Live-Cam\\.venv\\Scripts\\P:\\software\\Deep-Live-Cam\\.venv\\Scripts\\python.exe.exe",
+          "cwd": "P:\\software\\Deep-Live-Cam",
+          "type": "venv",
+          "ps1Path": "P:\\software\\bin\\deep-live-cam.ps1",
+          "name": "deep-live-cam",
+          "baseArgs": [
+            "P:\\software\\Deep-Live-Cam\\run.py",
+            "--execution-provider",
+            "cuda"
+          ],
+          "venv": "P:\\software\\Deep-Live-Cam\\.venv"
+        }
+      ],
+      "stack": "python",
+      "python_version": null,
+      "last_head": "dfd145b9969c9a78365cc9e5b0f9c5c288b4b46d",
+      "default_branch": "main",
+      "created_at": "2026-02-08T17:35:25Z",
+      "updated_at": "2026-02-08T17:35:25Z",
+      "setup": {
+        "last_attempt": "2026-02-08T17:51:56Z",
+        "result": "succeeded",
+        "error": null
+      }
     }
   ]
 }

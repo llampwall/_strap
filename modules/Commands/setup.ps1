@@ -101,6 +101,56 @@ function Invoke-Setup {
       Write-Host "  (Docker also detected; not auto-running)" -ForegroundColor Yellow
     }
 
+    # Python version management via pyenv
+    $detectedPythonVersion = $null
+    $pyenvPythonPath = $null
+
+    if ($stack -eq "python") {
+      # Detect required Python version
+      $detectedPythonVersion = Get-PythonVersionFromFile -RepoPath $resolvedPath
+
+      if ($detectedPythonVersion) {
+        Info "Detected Python version requirement: $detectedPythonVersion"
+
+        # Check if pyenv is installed
+        if (Test-PyenvInstalled) {
+          # Check if this version is already installed
+          $installedVersions = Get-PyenvVersions
+          if ($installedVersions -notcontains $detectedPythonVersion) {
+            Write-Host "  Installing Python $detectedPythonVersion via pyenv..." -ForegroundColor Cyan
+            $installSuccess = Install-PyenvVersion -Version $detectedPythonVersion
+
+            if (-not $installSuccess) {
+              Write-Host ""
+              Write-Host "  Failed to install Python $detectedPythonVersion" -ForegroundColor Red
+              Write-Host "  Please install manually and try again" -ForegroundColor Yellow
+              Pop-Location
+              Die "Setup failed"
+            }
+          } else {
+            Info "Python $detectedPythonVersion already installed"
+          }
+
+          # Set local version for this repo
+          $setSuccess = Set-PyenvLocalVersion -RepoPath $resolvedPath -Version $detectedPythonVersion
+          if (-not $setSuccess) {
+            Write-Host "  Warning: Failed to set local Python version" -ForegroundColor Yellow
+          }
+
+          # Get path to pyenv's Python executable
+          $pyenvPythonPath = Get-PyenvPythonPath -Version $detectedPythonVersion
+          if ($pyenvPythonPath) {
+            Info "Using Python: $pyenvPythonPath"
+          }
+        } else {
+          Write-Host ""
+          Write-Host "  [!] Python version $detectedPythonVersion required but pyenv-win not installed" -ForegroundColor Yellow
+          Write-Host "  Run 'strap doctor' to install pyenv-win, or install Python manually" -ForegroundColor Yellow
+          Write-Host ""
+        }
+      }
+    }
+
     # Generate install plan
     $plan = @()
 
@@ -108,8 +158,18 @@ function Invoke-Setup {
       "python" {
         # Defaults
         $venvDir = if ($VenvPath) { $VenvPath } else { ".venv" }
-        $pythonCmd = if ($PythonExe) { $PythonExe } else { "python" }
-        $useUvFlag = if ($PSBoundParameters.ContainsKey('UseUv')) { $UseUv } else { $true }
+
+        # Use pyenv Python if detected, otherwise fall back to user-specified or default
+        if ($pyenvPythonPath -and -not $PythonExe) {
+          $pythonCmd = "& '$pyenvPythonPath'"
+        } elseif ($PythonExe) {
+          $pythonCmd = $PythonExe
+        } else {
+          $pythonCmd = "python"
+        }
+
+        # Default to pip (more conservative/reliable), users can opt-in to uv with --use-uv
+        $useUvFlag = if ($PSBoundParameters.ContainsKey('UseUv')) { $UseUv } else { $false }
 
         $venvPython = Join-Path $venvDir "Scripts\python.exe"
 
@@ -246,8 +306,9 @@ function Invoke-Setup {
       Info $step.Description
       Write-Host "  > $($step.Command)" -ForegroundColor Gray
 
-      # Execute command
-      $output = Invoke-Expression $step.Command 2>&1
+      # Execute command using pwsh to avoid Invoke-Expression issues
+      # This properly handles quoted paths and special characters
+      $output = pwsh -NoProfile -Command $step.Command 2>&1
       if ($LASTEXITCODE -ne 0) {
         Write-Host ""
         Write-Host "ERROR: Command failed with exit code $LASTEXITCODE" -ForegroundColor Red
@@ -285,6 +346,15 @@ function Invoke-Setup {
         }
         if ($currentEntry.stack -notcontains $stack) {
           $currentEntry.stack = @($stack)
+        }
+
+        # Update Python version if detected
+        if ($detectedPythonVersion) {
+          if ($currentEntry.PSObject.Properties['python_version']) {
+            $currentEntry.python_version = $detectedPythonVersion
+          } else {
+            $currentEntry | Add-Member -NotePropertyName 'python_version' -NotePropertyValue $detectedPythonVersion -Force
+          }
         }
 
         # Update setup status (nested object)

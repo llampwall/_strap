@@ -74,6 +74,8 @@ function Invoke-Clone {
 
   # Detect stack (best-effort)
   $stackDetected = $null
+  $pythonVersion = $null
+
   Push-Location $absolutePath
   try {
     if (Test-Path "pyproject.toml") { $stackDetected = "python" }
@@ -81,6 +83,14 @@ function Invoke-Clone {
     elseif (Test-Path "package.json") { $stackDetected = "node" }
     elseif (Test-Path "Cargo.toml") { $stackDetected = "rust" }
     elseif (Test-Path "go.mod") { $stackDetected = "go" }
+
+    # Detect Python version if Python stack
+    if ($stackDetected -eq "python") {
+      $pythonVersion = Get-PythonVersionFromFile -RepoPath $absolutePath
+      if ($pythonVersion) {
+        Info "Detected Python version: $pythonVersion"
+      }
+    }
   } finally {
     Pop-Location
   }
@@ -98,6 +108,7 @@ function Invoke-Clone {
     chinvex_context = $null  # Default, updated below if sync succeeds
     shims           = @()
     stack           = if ($stackDetected) { $stackDetected } else { @() }
+    python_version  = $pythonVersion
     created_at      = $timestamp
     updated_at      = $timestamp
   }

@@ -12,7 +12,8 @@
 - Default PWsh: Windows Store pwsh.exe (`C:\Program Files\WindowsApps\...`)
 - Chinvex contexts root: `P:\ai_memory\contexts`
 - PM2 vendored location: `P:\software\_node-tools\pm2`
-- Python versions directory: `P:\software\_python-versions` (auto-downloaded full installers)
+- pyenv-win vendored location: `P:\software\_python-tools\pyenv-win`
+- Python versions directory: `P:\software\_python-tools\pyenv-win\pyenv-win\versions` (managed by pyenv-win)
 
 ## Rules
 - Never run consolidate/audit/snapshot/migrate/archive commands (kill-switched since 2026-02-02)
@@ -26,7 +27,10 @@
 - Metadata-only changes use sync-metadata-from-strap; depth changes trigger full reingest with --rebuild-index (updated 2026-02-05)
 - System tools (PM2, etc.) can be vendored and shimmed to _strap repo for system-wide availability (updated 2026-02-05)
 - Python versions auto-detected from .python-version, pyproject.toml, or requirements.txt; stored in registry as python_version (updated 2026-02-08)
-- Use full Python installers (not embeddable) to ensure venv support (updated 2026-02-08)
+- pyenv-win ignores PYENV_ROOT environment variable; hardcoded to pyenv-win\versions\ in VBScript (updated 2026-02-08)
+- Major.minor Python versions (e.g., "3.12") dynamically resolve to latest stable patch via pyenv install --list (updated 2026-02-08)
+- Python installations validated after install by running python --version (updated 2026-02-08)
+- Conservative default: pip (not uv) for dependency installation unless --use-uv specified (updated 2026-02-08)
 
 ## Key Facts
 - Shim types: simple (direct exec), venv (Python), node (Node.js PATH setup)
@@ -37,6 +41,7 @@
 - Metadata presets: --tool (light/stable/third-party), --software (full/active/[])
 - Configure command flags: --depth, --status, --tags, --add-tags, --remove-tags, --yes, --dry-run, --json
 - Python version detection order: .python-version, pyproject.toml requires-python, requirements.txt comments
+- pyenv-win shim location: `P:\software\bin\pyenv.{ps1,cmd}` (created by strap doctor --install-pyenv)
 
 ## Hazards
 - PowerShell unwraps single-element arrays (use comma operator: `,$array`)

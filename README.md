@@ -53,6 +53,9 @@ Git URL or local folder → strap adopt/clone → instant global availability
 ```powershell
 strap clone https://github.com/llampwall/chinvex
 # ✓ Auto-detected Python stack
+# ✓ Detected Python version: 3.11
+# ✓ Installed Python 3.11.9 via pyenv-win
+# ✓ Created venv with correct Python version
 # ✓ Found 2 entry points in pyproject.toml
 # ✓ Created shims: chinvex.{ps1,cmd}, chinvex-mcp.{ps1,cmd}
 
@@ -73,7 +76,8 @@ Manual shim creation is still available for custom launchers or aliases.
 - Windows PowerShell (pwsh recommended)
 - Git
 - Node 20+ (for node templates) + pnpm (via Corepack or global install)
-- Python 3.11+ (for python template)
+- Python 3.11+ (for python template, or use pyenv-win for automatic version management)
+- pyenv-win (optional, auto-installed via `strap doctor --install-pyenv` for Python version management)
 - `templates/context-hook.cmd` (bundled in this repo)
 
 ## Quick Start
@@ -96,6 +100,8 @@ strap myrepo -t mono --start
 # Option 1: Clone from GitHub
 strap clone https://github.com/llampwall/chinvex
 # → Auto-detects Python stack from pyproject.toml
+# → Detects Python version requirement from .python-version
+# → Installs correct Python version via pyenv-win (if needed)
 # → Finds [project.scripts]: chinvex, chinvex-mcp
 # → Creates venv shims in P:\software\bin
 # → chinvex and chinvex-mcp now available globally!
@@ -123,6 +129,7 @@ strap doctor
 
 **What just happened?**
 - Stack detection: reads `pyproject.toml`, `setup.py`, `package.json` to identify Python/Node
+- Python version management: detects required version from `.python-version`, installs via pyenv-win if needed
 - Entry point discovery: parses `[project.scripts]`, `[tool.poetry.scripts]`, `console_scripts`, or `package.json.bin`
 - Shim creation: generates `.ps1` + `.cmd` launchers in `P:\software\bin` (one-time PATH setup)
 - Venv integration: Python shims point to `.venv\Scripts\tool.exe`, Node shims use `node.exe + entrypoint`
@@ -287,6 +294,7 @@ strap doctor [--json]
 
 **doctor**
 - `--json` — output structured JSON instead of human-readable format
+- `--install-pyenv` — install pyenv-win for Python version management
 
 <!--
 **migrate**
@@ -531,7 +539,7 @@ Strap has two modes:
 
 - `clone`: clone a GitHub repo into `P:\software\...` or `P:\software\_scripts\...` and register it
 - `adopt`: register a repo you already cloned manually (or bulk-discover with `--scan`)
-- `setup`: detect stack and run an allowlisted install plan (python/node/go/rust; docker = detect only)
+- `setup`: detect stack and run an allowlisted install plan (python/node/go/rust; docker = detect only); for Python, auto-detects version requirements and installs via pyenv-win
 - `shim`: generate a `.cmd` launcher in your shims dir and attach it to the registry entry
 - `update`: pull latest changes (single or `--all`, supports `--rebase`, `--stash`, optional `--setup`)
 - `move`: relocate a managed repo to a new path while keeping registry consistent
@@ -576,6 +584,7 @@ Lifecycle management uses a JSON registry at `registry.json` (in the strap direc
 - `shims` — array of shim metadata objects (see Shim System section)
 - `setup` — setup status object with fields: `result` ("succeeded", "failed", "skipped", or null), `error` (error message if failed), `last_attempt` (ISO 8601 timestamp)
 - `stack` — array of detected stack types (e.g., `["python"]`, `["node"]`)
+- `python_version` — detected Python version requirement (e.g., `"3.12.10"`, null if not Python project)
 - `created_at` — ISO 8601 timestamp
 - `updated_at` — ISO 8601 timestamp
 - `last_pull_at` — ISO 8601 timestamp of last update (added by `strap update`)
@@ -896,6 +905,71 @@ strap rename myproject --to my-project --move-folder --dry-run
 - Checks for registry-disk drift (repos in registry but not on disk, or vice versa)
 - Reports status: OK (all good), WARN (non-critical issues), or FAIL (critical issues)
 - Use `--json` for structured output instead of human-readable format
+
+## Python Version Management
+
+Strap integrates with pyenv-win to automatically manage Python versions for your projects. No manual Python installation or conda needed.
+
+**How it works:**
+
+1. **Install pyenv-win** (one-time setup):
+   ```powershell
+   strap doctor --install-pyenv
+   ```
+   This vendors pyenv-win to `P:\software\_python-tools\pyenv-win` and creates a system-wide shim.
+
+2. **Python versions are auto-detected** during `strap adopt`, `strap clone`, or `strap setup`:
+   - From `.python-version` file (e.g., `3.12` or `3.12.10`)
+   - From `pyproject.toml` (`requires-python = ">=3.11"`)
+   - From `requirements.txt` comments (e.g., `# python_version: 3.11.9`)
+
+3. **Major.minor versions resolve automatically**:
+   - `.python-version` contains `3.12` → strap queries pyenv for latest stable (e.g., `3.12.10`)
+   - Full versions like `3.11.9` are used as-is
+
+4. **Installation and validation**:
+   - If version not installed, strap runs `pyenv install <version>`
+   - After install, validates by running `python --version`
+   - Sets local Python version for the repo with `pyenv local <version>`
+
+5. **Venv creation uses correct Python**:
+   - Setup automatically uses the pyenv Python for venv creation
+   - Stored in registry as `python_version` field
+
+**Example workflow:**
+
+```powershell
+# Clone a Python project with .python-version containing "3.12"
+strap clone https://github.com/user/python-app
+
+# Output:
+# ✓ Detected Python version requirement: 3.12
+# ✓ Resolved to latest stable: 3.12.10 (via pyenv)
+# ✓ Installing Python 3.12.10 via pyenv...
+# ✓ Python 3.12.10 installed and validated
+# ✓ Set local Python version to 3.12.10
+# ✓ Created venv with Python 3.12.10
+# ✓ Installed dependencies via pip
+```
+
+**Manual usage:**
+
+```powershell
+# List installed Python versions
+pyenv versions
+
+# Install a specific version
+pyenv install 3.11.9
+
+# List all available versions
+pyenv install --list
+```
+
+**Technical notes:**
+- pyenv-win ignores `PYENV_ROOT` environment variable (hardcoded in VBScript)
+- Python versions stored in `P:\software\_python-tools\pyenv-win\pyenv-win\versions\`
+- Conservative default: uses `pip` (not `uv`) unless `--use-uv` flag specified
+- Version detection priority: `.python-version` → `pyproject.toml` → `requirements.txt`
 
 <!--
 ## Snapshot

@@ -14,7 +14,8 @@ None
 
 ## Next Actions
 - Monitor setup health via HEALTH column in `strap list`
-- Monitor automatic Python version detection across different project types
+- Monitor pyenv-win integration across different Python projects and version formats
+- Monitor major.minor → latest patch version resolution accuracy
 - Use configure command to optimize chinvex syncing (metadata vs full reingest)
 - Consider enabling chinvex integration by default in new installs
 

@@ -79,6 +79,7 @@ $ModulesPath = Join-Path $PSScriptRoot "modules"
 . (Join-Path $ModulesPath "Path.ps1")
 . (Join-Path $ModulesPath "Config.ps1")
 . (Join-Path $ModulesPath "Chinvex.ps1")
+. (Join-Path $ModulesPath "PyenvIntegration.ps1")
 . (Join-Path $ModulesPath "CLI.ps1")
 . (Join-Path $ModulesPath "References.ps1")
 . (Join-Path $ModulesPath "Audit.ps1")
@@ -1216,23 +1217,68 @@ if ($RepoName -eq "doctor") {
   $config = Load-Config $PSScriptRoot
   $registry = Load-Registry $config
 
-  # Check for --shims flag
-  if ($ExtraArgs -contains "--shims") {
+  $runShims = $ExtraArgs -contains "--shims"
+  $runSystem = $ExtraArgs -contains "--system"
+  $installPyenv = $ExtraArgs -contains "--install-pyenv"
+  $runAll = -not $runShims -and -not $runSystem -and -not $installPyenv  # Default: run all checks
+
+  # Handle pyenv installation
+  if ($installPyenv) {
+    Write-Host "=== INSTALLING PYENV-WIN ===" -ForegroundColor Cyan
+    Write-Host ""
+
+    # Install pyenv-win
+    $success = Install-PyenvWin
+    if (-not $success) {
+      Write-Host ""
+      Write-Host "[X] Failed to install pyenv-win" -ForegroundColor Red
+      exit 1
+    }
+
+    # Create shim
+    Write-Host ""
+    Write-Host "Creating system-wide shim..." -ForegroundColor Cyan
+    $shimSuccess = New-PyenvShim -ShimsDir $config.roots.shims
+    if (-not $shimSuccess) {
+      Write-Host ""
+      Write-Host "[X] Failed to create pyenv shim" -ForegroundColor Red
+      exit 1
+    }
+
+    Write-Host ""
+    Write-Host "[OK] pyenv-win installed and configured successfully!" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Next steps:" -ForegroundColor Cyan
+    Write-Host "  1. Verify: pyenv --version" -ForegroundColor Gray
+    Write-Host "  2. Install Python: pyenv install 3.11.9" -ForegroundColor Gray
+    Write-Host "  3. Use in projects via: strap setup" -ForegroundColor Gray
+    exit 0
+  }
+
+  $anyFailed = $false
+
+  # Run system dependency checks
+  if ($runSystem -or $runAll) {
+    $results = Invoke-DoctorSystemChecks -Config $config
+    $output = Format-DoctorSystemResults $results
+    Write-Host $output
+    Write-Host ""
+
+    $failed = ($results | Where-Object { -not $_.passed -and $_.severity -in @("critical", "error") }).Count
+    if ($failed -gt 0) { $anyFailed = $true }
+  }
+
+  # Run shim checks
+  if ($runShims -or $runAll) {
     $results = Invoke-DoctorShimChecks -Config $config -Registry $registry
     $output = Format-DoctorShimResults $results
     Write-Host $output
 
     $failed = ($results | Where-Object { -not $_.passed -and $_.severity -in @("critical", "error") }).Count
-    exit $(if ($failed -gt 0) { 1 } else { 0 })
+    if ($failed -gt 0) { $anyFailed = $true }
   }
 
-  # Fall back to old doctor command if exists
-  if (Get-Command Invoke-Doctor -ErrorAction SilentlyContinue) {
-    Invoke-Doctor -StrapRootPath $TemplateRoot -OutputJson:$Json.IsPresent
-  } else {
-    Write-Host "Usage: strap doctor --shims"
-  }
-  exit 0
+  exit $(if ($anyFailed) { 1 } else { 0 })
 }
 
 if ($RepoName -eq "migrate") {

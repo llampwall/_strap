@@ -160,3 +160,101 @@ function Format-DoctorShimResults {
 }
 
 #endregion
+
+#region System Dependency Checks
+
+function Invoke-DoctorSystemChecks {
+    <#
+    .SYNOPSIS
+    Checks for required system dependencies like pyenv-win.
+
+    .PARAMETER Interactive
+    If true, offer to install missing dependencies.
+
+    .PARAMETER Config
+    Configuration object with paths.
+    #>
+    param(
+        [switch]$Interactive,
+        [object]$Config
+    )
+
+    $results = @()
+
+    # SYS001: pyenv-win installed
+    $pyenvInstalled = Test-PyenvInstalled
+
+    $results += @{
+        id = "SYS001"
+        check = "pyenv-win installed"
+        severity = "warning"
+        passed = $pyenvInstalled
+        message = if (-not $pyenvInstalled) {
+            "pyenv-win not found - required for Python version management"
+        } else { $null }
+        fix = if (-not $pyenvInstalled) {
+            "Run: strap doctor --install-pyenv"
+        } else { $null }
+    }
+
+    # SYS002: pyenv shim exists (only if installed)
+    if ($pyenvInstalled -and $Config) {
+        $shimPath = Join-Path $Config.roots.shims "pyenv.ps1"
+        $shimExists = Test-Path $shimPath
+
+        $results += @{
+            id = "SYS002"
+            check = "pyenv shim exists"
+            severity = "warning"
+            passed = $shimExists
+            message = if (-not $shimExists) {
+                "pyenv shim not found - command may not be available system-wide"
+            } else { $null }
+            fix = if (-not $shimExists) {
+                "Run: strap doctor --install-pyenv"
+            } else { $null }
+        }
+    }
+
+    return $results
+}
+
+function Format-DoctorSystemResults {
+    param([Parameter(Mandatory)][array]$Results)
+
+    $output = @()
+    $output += "=== SYSTEM DEPENDENCIES ==="
+    $output += ""
+
+    $grouped = $Results | Group-Object severity
+
+    foreach ($group in $grouped | Sort-Object { @{critical=0;error=1;warning=2}[$_.Name] }) {
+        $color = switch ($group.Name) {
+            "critical" { "Red" }
+            "error" { "Red" }
+            "warning" { "Yellow" }
+            default { "White" }
+        }
+
+        $output += "[$($group.Name.ToUpper())]"
+
+        foreach ($result in $group.Group) {
+            if ($result.passed) {
+                $output += "  [OK] $($result.check)"
+            } else {
+                $output += "  [X] $($result.check)"
+                if ($result.message) { $output += "    $($result.message)" }
+                if ($result.fix) { $output += "    $($result.fix)" }
+            }
+        }
+        $output += ""
+    }
+
+    $passed = ($Results | Where-Object { $_.passed }).Count
+    $failed = ($Results | Where-Object { -not $_.passed }).Count
+    $output += "Passed: $passed | Failed: $failed"
+
+    return $output -join "`n"
+}
+
+#endregion
