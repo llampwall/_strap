@@ -4,6 +4,8 @@
 # Decisions
 
 ## Recent (last 30 days)
+- Implemented automatic Python version detection, download, and installation (a910b75)
+- Vendored PM2 and created system-wide shim to ensure availability (50fda24)
 - Added configure command for post-ingestion metadata updates (1b551bc)
 - Added setup status tracking with health visibility (09af3e0)
 - Enabled full chinvex ingestion during adopt/clone (16cac94)
@@ -11,10 +13,20 @@
 - Migrated from single scope field to orthogonal metadata (8bdedf2)
 - Completed shim system v3.1 rewrite with dual-file architecture (23d34f1)
 - Upgraded to Pester 5 for test modernization (f5b7914)
-- Moved commands to modules/Commands/ hierarchy (305e0ea)
-- Completed chinvex integration (TDD-driven, 14 tasks) (bd509da)
 
 ## 2026-02
+
+### 2026-02-08 — Automatic Python version detection and installation
+
+- **Why:** Zero manual Python management needed - eliminate manual version installation and conda dependency
+- **Impact:** Added comprehensive Python version management: auto-detects from .python-version/pyproject.toml/requirements.txt; downloads and installs to P:\software\_python-versions; stores python_version in registry; integrates with adopt/clone/setup; uses full installers (not embeddable) for venv support
+- **Evidence:** a910b75
+
+### 2026-02-05 — Vendor PM2 and create system-wide shim
+
+- **Why:** Need PM2 available system-wide without depending on global package manager installations
+- **Impact:** Vendored PM2 6.0.14 to P:\software\_node-tools\pm2; created shim at P:\software\bin\pm2.cmd registered to _strap repo; removed dependency on pnpm global PM2
+- **Evidence:** 50fda24
 
 ### 2026-02-05 — Configure command for post-ingestion metadata updates
 

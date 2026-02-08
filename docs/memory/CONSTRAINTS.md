@@ -11,6 +11,8 @@
 - Registry version: 3 (auto-migrates from V2)
 - Default PWsh: Windows Store pwsh.exe (`C:\Program Files\WindowsApps\...`)
 - Chinvex contexts root: `P:\ai_memory\contexts`
+- PM2 vendored location: `P:\software\_node-tools\pm2`
+- Python versions directory: `P:\software\_python-versions` (auto-downloaded full installers)
 
 ## Rules
 - Never run consolidate/audit/snapshot/migrate/archive commands (kill-switched since 2026-02-02)
@@ -22,6 +24,9 @@
 - Registry must be atomic (save only after successful operations)
 - Never modify venv shims manually (regenerate with `strap shim --regen`)
 - Metadata-only changes use sync-metadata-from-strap; depth changes trigger full reingest with --rebuild-index (updated 2026-02-05)
+- System tools (PM2, etc.) can be vendored and shimmed to _strap repo for system-wide availability (updated 2026-02-05)
+- Python versions auto-detected from .python-version, pyproject.toml, or requirements.txt; stored in registry as python_version (updated 2026-02-08)
+- Use full Python installers (not embeddable) to ensure venv support (updated 2026-02-08)
 
 ## Key Facts
 - Shim types: simple (direct exec), venv (Python), node (Node.js PATH setup)
@@ -31,6 +36,7 @@
 - Setup status values: succeeded, failed, skipped, null
 - Metadata presets: --tool (light/stable/third-party), --software (full/active/[])
 - Configure command flags: --depth, --status, --tags, --add-tags, --remove-tags, --yes, --dry-run, --json
+- Python version detection order: .python-version, pyproject.toml requires-python, requirements.txt comments
 
 ## Hazards
 - PowerShell unwraps single-element arrays (use comma operator: `,$array`)
