@@ -630,6 +630,51 @@ The registry enables:
 - Path dependency tracking via audit index
 - Consolidation workflow state management
 
+### Registry Backup System
+
+Strap automatically backs up the registry before every write operation, protecting against data loss from crashes, bugs, or accidental changes.
+
+**How it works:**
+- Before each registry write, a timestamped backup is created: `backups/registry-{yyyyMMdd-HHmmss}.json`
+- Automatic pruning keeps the 30 most recent backups (sorted by timestamp)
+- Backups are stored in `P:\software\_strap\backups\` (created automatically if missing)
+- No configuration needed - backups happen transparently on every registry modification
+
+**When backups are created:**
+Every command that modifies the registry triggers an automatic backup:
+- `strap clone`, `strap adopt` (new entries)
+- `strap configure` (metadata changes)
+- `strap move`, `strap rename` (path/name updates)
+- `strap uninstall`, `strap purge` (removal operations)
+- `strap update` (timestamp updates)
+- `strap setup` (setup status changes)
+
+**Backup location:**
+```
+P:\software\_strap\backups\
+  registry-20260209-143052.json
+  registry-20260209-142847.json
+  registry-20260209-141523.json
+  ...
+```
+
+**Retention policy:**
+- Maximum: 30 backups
+- Pruning: Oldest backups deleted first when limit exceeded
+- Storage: Approximately 12-15 KB per backup (varies with number of repos)
+
+**Manual recovery:**
+If you need to restore from a backup:
+```powershell
+# List available backups
+Get-ChildItem P:\software\_strap\backups | Sort-Object Name -Descending | Select-Object -First 10
+
+# Restore a specific backup
+Copy-Item P:\software\_strap\backups\registry-20260209-143052.json P:\software\_strap\registry.json -Force
+```
+
+The backup system provides peace of mind during risky operations like bulk updates, consolidation, or custom scripts that modify the registry.
+
 ### Known Limitations
 
 **PowerShell Parameter Binding**: When using `strap shim` with the `---` separator, single-letter flags in the command (like `python -m module`) may conflict with PowerShell's parameter matching.

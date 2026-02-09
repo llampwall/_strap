@@ -144,8 +144,42 @@ function Load-Registry($configObj) {
   Die "Unrecognized registry format"
 }
 
+function Backup-Registry($registryPath) {
+  # Only backup if registry exists
+  if (-not (Test-Path $registryPath)) {
+    return
+  }
+
+  # Create backups directory if missing
+  $registryDir = Split-Path $registryPath -Parent
+  $backupsDir = Join-Path $registryDir "backups"
+  if (-not (Test-Path $backupsDir)) {
+    New-Item -ItemType Directory -Path $backupsDir -Force | Out-Null
+  }
+
+  # Create timestamped backup
+  $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+  $backupPath = Join-Path $backupsDir "registry-$timestamp.json"
+  Copy-Item -LiteralPath $registryPath -Destination $backupPath -Force
+
+  # Prune old backups (keep 30 most recent)
+  $backups = Get-ChildItem -LiteralPath $backupsDir -Filter "registry-*.json" |
+    Sort-Object Name -Descending
+
+  if ($backups.Count -gt 30) {
+    $toDelete = $backups | Select-Object -Skip 30
+    foreach ($backup in $toDelete) {
+      Remove-Item -LiteralPath $backup.FullName -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
 function Save-Registry($configObj, $entries) {
   $registryPath = $configObj.registry
+
+  # Backup before writing
+  Backup-Registry $registryPath
+
   $tmpPath = "$registryPath.tmp"
 
   $registryObj = [PSCustomObject]@{

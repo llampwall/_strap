@@ -8,6 +8,7 @@
 - Software root: `P:\software` (flat structure)
 - Tools root: `P:\software\_scripts`
 - Registry path: `P:\software\_strap\registry.json`
+- Registry backups: `P:\software\_strap\backups\` (automatic, keeps 30 most recent) (added 2026-02-09)
 - Registry version: 3 (auto-migrates from V2)
 - Default PWsh: Windows Store pwsh.exe (`C:\Program Files\WindowsApps\...`)
 - Chinvex contexts root: `P:\ai_memory\contexts`
@@ -31,6 +32,7 @@
 - Major.minor Python versions (e.g., "3.12") dynamically resolve to latest stable patch via pyenv install --list (updated 2026-02-08)
 - Python installations validated after install by running python --version (updated 2026-02-08)
 - Conservative default: pip (not uv) for dependency installation unless --use-uv specified (updated 2026-02-08)
+- Registry automatically backed up before every write with timestamp; pruned to keep 30 most recent (added 2026-02-09)
 
 ## Key Facts
 - Shim types: simple (direct exec), venv (Python), node (Node.js PATH setup)
