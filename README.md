@@ -1366,8 +1366,13 @@ Invoke-Pester tests\powershell\YourTest.Tests.ps1 -Output Detailed
 
 ## Skills
 
-This repo ships a local Codex skill to drive strap via intent inference:
+This repo ships skills for both Claude Code and Codex (junction-linked from `skills/` directory):
 
-- `skills/strap-bootstrapper/SKILL.md` — intent-based template selection, templatize, and doctor rules
+- `skills/using-strap/SKILL.md` — Complete command reference, workflows, troubleshooting, and best practices for all strap operations
+- `skills/strap-bootstrapper/SKILL.md` — Intent-based template selection, templatize, and doctor rules
 
-To install it locally, copy the folder into your Codex skills directory (e.g., `C:\Users\<you>\.codex\skills\strap-bootstrapper`).
+**Installation:** Skills are automatically available via junction points:
+- Claude Code: `~\.claude\skills\using-strap\` → `P:\software\_strap\skills\using-strap\`
+- Codex: `~\.codex\skills\using-strap\` → `P:\software\_strap\skills\using-strap\`
+
+Edit skills in the repo and changes are immediately available to both agents.
