@@ -75,7 +75,7 @@ function Invoke-Purge {
 
     foreach ($entry in $registry) {
       if ($entry.chinvex_context) {
-        $deleted = Invoke-Chinvex -Arguments @("context", "delete", $entry.chinvex_context, "--force")
+        $deleted = Invoke-Chinvex -Arguments @("context", "purge", $entry.chinvex_context) -StdIn "y"
         if ($deleted) {
           Write-Host "  deleted: $($entry.chinvex_context)" -ForegroundColor Green
           $cleaned++

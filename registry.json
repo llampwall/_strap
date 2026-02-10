@@ -402,6 +402,26 @@
         "result": "succeeded",
         "error": null
       }
+    },
+    {
+      "id": "facefusion",
+      "name": "facefusion",
+      "url": "https://github.com/facefusion/facefusion.git",
+      "path": "P:\\software\\facefusion",
+      "chinvex_depth": "full",
+      "status": "active",
+      "tags": [],
+      "chinvex_context": "facefusion",
+      "shims": [],
+      "stack": "python",
+      "python_version": null,
+      "created_at": "2026-02-10T12:56:16Z",
+      "updated_at": "2026-02-10T13:00:06Z",
+      "setup": {
+        "result": "succeeded",
+        "error": null,
+        "last_attempt": "2026-02-10T13:00:06Z"
+      }
     }
   ]
 }

@@ -136,7 +136,7 @@ function Invoke-Uninstall {
   # Chinvex cleanup (BEFORE removing shims/folder/registry)
   if (Test-ChinvexEnabled -NoChinvex:$NoChinvex -StrapRootPath $StrapRootPath) {
     if ($entry.chinvex_context) {
-      $deleted = Invoke-Chinvex -Arguments @("context", "delete", $entry.chinvex_context, "--force")
+      $deleted = Invoke-Chinvex -Arguments @("context", "purge", $entry.chinvex_context) -StdIn "y"
       if ($deleted) {
         Info "Chinvex: deleted context '$($entry.chinvex_context)'"
       } else {

@@ -52,6 +52,7 @@
 - Git worktrees detected by consolidate cause failure
 - Cross-volume moves require git integrity verification (fsck + object count)
 - PM2 services must be stopped before consolidation moves
+- Chinvex context purge requires stdin confirmation ("y") - use `Invoke-Chinvex -StdIn "y"`
 
 ## Superseded
 (None yet)

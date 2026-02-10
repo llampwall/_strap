@@ -64,18 +64,25 @@ function Invoke-Chinvex {
         Canonical error handling: any failure returns $false.
     .PARAMETER Arguments
         Array of arguments to pass to chinvex CLI.
+    .PARAMETER StdIn
+        Optional string to pipe to stdin (e.g., "y" for confirmation prompts).
     .OUTPUTS
         [bool] True if exit code 0, false otherwise.
     #>
     param(
         [Parameter(Mandatory)]
-        [string[]] $Arguments
+        [string[]] $Arguments,
+        [string] $StdIn = $null
     )
 
     if (-not (Test-ChinvexAvailable)) { return $false }
 
     try {
-        & chinvex @Arguments 2>&1 | Out-Null
+        if ($StdIn) {
+            $StdIn | & chinvex @Arguments 2>&1 | Out-Null
+        } else {
+            & chinvex @Arguments 2>&1 | Out-Null
+        }
         return ($LASTEXITCODE -eq 0)
     } catch {
         Warn "Chinvex command failed: $_"
