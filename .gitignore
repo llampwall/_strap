@@ -23,6 +23,9 @@ chroma/
 *.local.toml
 *.env
 
+# Registry backups
+/backups/
+
 # Worktrees
 .worktrees/
 
@@ -35,6 +38,11 @@ Desktop.ini
 
 # Temp test scripts
 /test_*.ps1
+/test-*.ps1
+/check-*.ps1
+/cleanup-*.ps1
+/create-*.ps1
+/update-*.ps1
 /run_tests.ps1
 /manual_*.ps1
 
