@@ -322,6 +322,15 @@ Copy-Item P:\software\_strap\backups\registry-20260209-143052.json P:\software\_
 - **Metadata forwarding**: All three fields (depth, status, tags) passed to chinvex
 - **Individual contexts**: Each repo gets its own chinvex context (context name = repo name)
 
+### Infrastructure Directories
+- **Underscore-prefixed directories are NOT repos**: `_node-tools`, `_strap`, `_python-tools`, etc.
+- **Not in registry.json**: These are strap infrastructure, not user repos
+- **Can have shims**: Tools vendored in these directories can have shims created (e.g., `pm2`, `pm2-startup`)
+- **Examples**:
+  - `P:\software\_node-tools\pm2` — Vendored PM2 with shim at `P:\software\bin\pm2.cmd`
+  - `P:\software\_strap` — Strap itself
+  - `P:\software\_python-tools\pyenv-win` — Python version manager
+
 ## Common Mistakes
 
 ### Mistake: Using --- instead of --cmd
