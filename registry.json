@@ -422,6 +422,34 @@
         "error": null,
         "last_attempt": "2026-02-10T13:00:06Z"
       }
+    },
+    {
+      "id": "yt-dlp",
+      "name": "yt-dlp",
+      "url": "https://github.com/yt-dlp/yt-dlp",
+      "path": "P:\\software\\yt-dlp",
+      "chinvex_depth": "full",
+      "status": "active",
+      "tags": [],
+      "chinvex_context": "yt-dlp",
+      "shims": {
+        "cwd": "P:\\software\\yt-dlp",
+        "name": "yt-dlp",
+        "baseArgs": null,
+        "type": "venv",
+        "venv": "P:\\software\\yt-dlp\\.venv",
+        "exe": "P:\\software\\yt-dlp\\.venv\\Scripts\\yt-dlp.exe",
+        "ps1Path": "P:\\software\\bin\\yt-dlp.ps1"
+      },
+      "stack": "python",
+      "python_version": "3.10.0",
+      "created_at": "2026-02-10T16:45:57Z",
+      "updated_at": "2026-02-10T16:45:57Z",
+      "setup": {
+        "result": "succeeded",
+        "error": null,
+        "last_attempt": "2026-02-10T16:58:26Z"
+      }
     }
   ]
 }
