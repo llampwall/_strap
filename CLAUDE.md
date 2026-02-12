@@ -21,27 +21,52 @@ PowerShell
 
 ## Commands (PowerShell)
 
+### Health & Diagnostics
 strap doctor                      # Diagnose installation and registry health (all checks)
 strap doctor --system             # Check system dependencies only
 strap doctor --shims              # Check shim health only
-strap doctor --node               # Check Node version management only
+strap doctor --node               # Check Node version management (includes outdated warnings)
+strap doctor --python             # Check Python version management (includes outdated warnings)
 strap doctor --install-fnm        # Install fnm (Fast Node Manager) for Node version management
 strap doctor --install-pyenv      # Install pyenv-win for Python version management
+
+### Version Upgrades
+strap upgrade-node <name>         # Upgrade Node version for a project
+strap upgrade-node <name> --latest              # Upgrade to latest stable version
+strap upgrade-node <name> --version 22.11.0     # Upgrade to specific version
+strap upgrade-node <name> --list-only           # List available upgrades without applying
+strap upgrade-node --all --latest               # Upgrade all Node projects to latest
+
+strap upgrade-python <name>       # Upgrade Python version for a project
+strap upgrade-python <name> --latest            # Upgrade to latest stable version
+strap upgrade-python <name> --version 3.12.0    # Upgrade to specific version
+strap upgrade-python <name> --list-only         # List available upgrades without applying
+strap upgrade-python --all --latest             # Upgrade all Python projects to latest
+
+### Lifecycle Management
 strap clone <url>                 # Clone repo and auto-create shims
 strap adopt                       # Register existing repo with auto-shim discovery
 strap setup --repo <name>         # Install dependencies (auto-detects Python/Node/Go/Rust)
-strap upgrade-node <name>         # Upgrade Node version for a project (--latest, --list-only)
 strap list --verbose              # Show all managed repos with full details
-strap shim <name> --cmd "<cmd>"   # Create global launcher shim
-strap shim --regen <name>         # Regenerate shims (re-resolves executables)
 strap update --all --yes          # Update all repos at once
 strap move <name> --dest <path>   # Relocate repo and update registry
+
+### Shims & Integration
+strap shim <name> --cmd "<cmd>"   # Create global launcher shim
+strap shim --regen <name>         # Regenerate shims (re-resolves executables)
 strap contexts                    # View chinvex sync status
+
+### Testing
 Invoke-Pester tests/powershell/ -Output Detailed  # Run test suite
 
 ## Current Sprint
 
-Stable operations - all major features implemented. Recent work: fnm integration for Node version management, setup status tracking (09af3e0), instant system-wide availability (f6c2f14), chinvex integration (bd509da).
+Stable operations - all major features implemented. Recent work (Feb 12, 2026):
+- Version upgrade commands (upgrade-node, upgrade-python) with --all flag for batch operations
+- Doctor health checks with outdated version warnings (NODE004, PY004)
+- fnm integration for Node version management (auto-detect, auto-install)
+- pyenv-win integration for Python version management
+- Setup status tracking and instant system-wide availability
 
 ## Architecture
 
