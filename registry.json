@@ -19,15 +19,16 @@
       "last_head": "dade5f4257fab498b843342c057a402cad6a6b30",
       "default_branch": null,
       "created_at": "2026-02-05T10:09:28Z",
-      "updated_at": "2026-02-05T23:44:44Z",
+      "updated_at": "2026-02-12T02:45:14Z",
       "stack_detected": "node",
       "setup_last_run_at": "2026-02-05T10:09:45Z",
       "setup_status": "success",
       "setup": {
         "result": "succeeded",
         "error": null,
-        "last_attempt": "2026-02-05T10:42:22Z"
-      }
+        "last_attempt": "2026-02-12T02:45:14Z"
+      },
+      "node_version": "20.19.0"
     },
     {
       "id": "chinvex",
@@ -105,15 +106,16 @@
       "last_head": "1aa0b9c84c184aa0d5e4f49811d4ebf57e51f9f7",
       "default_branch": "main",
       "created_at": "2026-02-05T10:10:12Z",
-      "updated_at": "2026-02-05T10:42:37Z",
+      "updated_at": "2026-02-12T02:45:16Z",
       "stack_detected": "node",
       "setup_last_run_at": "2026-02-05T10:10:18Z",
       "setup_status": "success",
       "setup": {
         "result": "succeeded",
         "error": null,
-        "last_attempt": "2026-02-05T10:42:37Z"
-      }
+        "last_attempt": "2026-02-12T02:45:16Z"
+      },
+      "node_version": "20.19.0"
     },
     {
       "id": "godex",
@@ -129,15 +131,16 @@
       "last_head": "fcc54e2bbe713a3b88ef7af138203ffd6c9faa51",
       "default_branch": null,
       "created_at": "2026-02-05T10:10:19Z",
-      "updated_at": "2026-02-05T10:42:39Z",
+      "updated_at": "2026-02-12T02:46:00Z",
       "stack_detected": "node",
       "setup_last_run_at": "2026-02-05T10:10:27Z",
       "setup_status": "success",
       "setup": {
         "result": "succeeded",
         "error": null,
-        "last_attempt": "2026-02-05T10:42:39Z"
-      }
+        "last_attempt": "2026-02-12T02:46:00Z"
+      },
+      "node_version": "20.19.0"
     },
     {
       "id": "mobile-comfy",
@@ -250,15 +253,16 @@
       "last_head": null,
       "default_branch": null,
       "created_at": "2026-02-05T10:11:23Z",
-      "updated_at": "2026-02-05T10:43:05Z",
+      "updated_at": "2026-02-12T02:46:31Z",
       "stack_detected": "node",
       "setup_last_run_at": "2026-02-05T10:11:31Z",
       "setup_status": "success",
       "setup": {
         "result": "succeeded",
         "error": null,
-        "last_attempt": "2026-02-05T10:43:05Z"
-      }
+        "last_attempt": "2026-02-12T02:46:31Z"
+      },
+      "node_version": "20.19.0"
     },
     {
       "id": "unclaimed-asset-manager",
@@ -317,7 +321,11 @@
       "default_branch": null,
       "created_at": "2026-02-05T12:02:48Z",
       "updated_at": "2026-02-05T12:02:48Z",
-      "setup": null
+      "setup": {
+        "result": "failed",
+        "error": "No recognized stack detected. Use --stack to force selection.",
+        "last_attempt": "2026-02-12T02:34:36Z"
+      }
     },
     {
       "id": "heretic",
@@ -450,6 +458,48 @@
         "error": null,
         "last_attempt": "2026-02-10T16:58:26Z"
       }
+    },
+    {
+      "id": "happy-cli",
+      "name": "happy-cli",
+      "url": "https://github.com/slopus/happy-cli.git",
+      "path": "P:\\software\\happy-cli",
+      "chinvex_depth": "full",
+      "status": "active",
+      "tags": [],
+      "chinvex_context": "happy-cli",
+      "shims": [
+        {
+          "type": "node",
+          "baseArgs": [
+            "./bin/happy.mjs"
+          ],
+          "exe": "P:\\software\\_node-tools\\fnm\\node-versions\\v20.19.0\\installation\\node.exe",
+          "name": "happy",
+          "ps1Path": "P:\\software\\bin\\happy.ps1",
+          "cwd": "P:\\software\\happy-cli"
+        },
+        {
+          "type": "node",
+          "baseArgs": [
+            "./bin/happy-mcp.mjs"
+          ],
+          "exe": "P:\\software\\_node-tools\\fnm\\node-versions\\v20.19.0\\installation\\node.exe",
+          "name": "happy-mcp",
+          "ps1Path": "P:\\software\\bin\\happy-mcp.ps1",
+          "cwd": "P:\\software\\happy-cli"
+        }
+      ],
+      "stack": "node",
+      "python_version": null,
+      "created_at": "2026-02-12T01:39:11Z",
+      "updated_at": "2026-02-12T02:46:41Z",
+      "setup": {
+        "result": "succeeded",
+        "error": null,
+        "last_attempt": "2026-02-12T02:46:41Z"
+      },
+      "node_version": "20.19.0"
     }
   ]
 }

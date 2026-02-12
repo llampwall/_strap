@@ -216,6 +216,40 @@ function Invoke-DoctorSystemChecks {
         }
     }
 
+    # SYS003: fnm installed
+    $fnmInstalled = Test-FnmInstalled
+    $results += @{
+        id = "SYS003"
+        check = "fnm installed"
+        severity = "warning"
+        passed = $fnmInstalled
+        message = if (-not $fnmInstalled) {
+            "fnm not found - required for Node version management"
+        } else { $null }
+        fix = if (-not $fnmInstalled) {
+            "Run: strap doctor --install-fnm"
+        } else { $null }
+    }
+
+    # SYS004: fnm shim exists (only if installed)
+    if ($fnmInstalled -and $Config) {
+        $shimPath = Join-Path $Config.roots.shims "fnm.ps1"
+        $shimExists = Test-Path $shimPath
+
+        $results += @{
+            id = "SYS004"
+            check = "fnm shim exists"
+            severity = "warning"
+            passed = $shimExists
+            message = if (-not $shimExists) {
+                "fnm shim not found - command may not be available system-wide"
+            } else { $null }
+            fix = if (-not $shimExists) {
+                "Run: strap doctor --install-fnm"
+            } else { $null }
+        }
+    }
+
     return $results
 }
 

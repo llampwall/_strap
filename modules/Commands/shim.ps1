@@ -240,7 +240,7 @@ function Invoke-Shim {
             }
         }
         "node" {
-            $resolvedExe = Resolve-ShimNodeExe -CliOverride $NodeExe -Config $Config
+            $resolvedExe = Resolve-ShimNodeExe -CliOverride $NodeExe -Config $Config -RepoPath $repoEntry.path
             # For node type, shimExe becomes baseArgs[0] (JS entrypoint)
             $shimBaseArgs = @($shimExe) + $shimBaseArgs
         }
@@ -358,11 +358,17 @@ function Invoke-ShimRegen {
     Write-Host "Regenerating $($shims.Count) shim(s) for '$RepoName'..." -ForegroundColor Cyan
 
     foreach ($shim in $shims) {
+        # Re-resolve exe for node-type shims to pick up fnm-managed Node
+        $resolvedExe = $shim.exe
+        if ($shim.type -eq "node") {
+            $resolvedExe = Resolve-ShimNodeExe -CliOverride $null -Config $Config -RepoPath $repoEntry.path
+        }
+
         $shimMeta = @{
             name = $shim.name
             repo = $RepoName
             type = $shim.type
-            exe = $shim.exe
+            exe = $resolvedExe
             baseArgs = if ($shim.baseArgs) { $shim.baseArgs } else { @() }
             venv = $shim.venv
             cwd = $shim.cwd
@@ -378,8 +384,16 @@ function Invoke-ShimRegen {
         [System.IO.File]::WriteAllText($ps1Path, $ps1Content, (New-Object System.Text.UTF8Encoding($false)))
         [System.IO.File]::WriteAllText($cmdPath, $cmdContent, (New-Object System.Text.UTF8Encoding($false)))
 
+        # Update registry with re-resolved exe path if it changed
+        if ($resolvedExe -ne $shim.exe) {
+            $shim.exe = $resolvedExe
+        }
+
         Write-Host "  [OK] $($shim.name)" -ForegroundColor Green
     }
+
+    # Save updated registry
+    Save-Registry $Config $Registry
 
     Write-Host "Done." -ForegroundColor Cyan
 }
@@ -450,9 +464,11 @@ function Resolve-ShimVenvExe {
 function Resolve-ShimNodeExe {
     param(
         [string]$CliOverride,
-        [Parameter(Mandatory)][object]$Config
+        [Parameter(Mandatory)][object]$Config,
+        [string]$RepoPath = $null
     )
 
+    # Priority 1: CLI override
     if ($CliOverride) {
         if (-not (Test-Path $CliOverride)) {
             Die "Node exe not found: $CliOverride"
@@ -460,17 +476,32 @@ function Resolve-ShimNodeExe {
         return $CliOverride
     }
 
+    # Priority 2: fnm-managed Node (if version detected and fnm available)
+    if ($RepoPath -and (Test-FnmInstalled)) {
+        $detectedVersion = Get-NodeVersionFromFile -RepoPath $RepoPath
+        if ($detectedVersion) {
+            $fnmNodePath = Get-FnmNodePath -Version $detectedVersion
+            if ($fnmNodePath) {
+                return $fnmNodePath
+            } else {
+                Warn "Node $detectedVersion detected but not installed. Using fallback."
+            }
+        }
+    }
+
+    # Priority 3: config.json nodeExe (existing behavior)
     if ($Config.defaults.nodeExe -and (Test-Path $Config.defaults.nodeExe)) {
         return $Config.defaults.nodeExe
     }
 
+    # Priority 4: PATH fallback
     $found = Get-Command node -ErrorAction SilentlyContinue
     if ($found) {
-        Warn "Using node from PATH: $($found.Source). Consider setting defaults.nodeExe."
+        Warn "Using node from PATH. Consider using fnm or setting defaults.nodeExe."
         return $found.Source
     }
 
-    Die "Node not found. Set defaults.nodeExe in config or provide --node-exe."
+    Die "Node not found. Install via 'strap doctor --install-fnm' or set defaults.nodeExe."
 }
 
 #endregion

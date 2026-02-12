@@ -80,6 +80,7 @@ $ModulesPath = Join-Path $PSScriptRoot "modules"
 . (Join-Path $ModulesPath "Config.ps1")
 . (Join-Path $ModulesPath "Chinvex.ps1")
 . (Join-Path $ModulesPath "PyenvIntegration.ps1")
+. (Join-Path $ModulesPath "FnmIntegration.ps1")
 . (Join-Path $ModulesPath "CLI.ps1")
 . (Join-Path $ModulesPath "References.ps1")
 . (Join-Path $ModulesPath "Audit.ps1")
@@ -1220,7 +1221,8 @@ if ($RepoName -eq "doctor") {
   $runShims = $ExtraArgs -contains "--shims"
   $runSystem = $ExtraArgs -contains "--system"
   $installPyenv = $ExtraArgs -contains "--install-pyenv"
-  $runAll = -not $runShims -and -not $runSystem -and -not $installPyenv  # Default: run all checks
+  $installFnm = $ExtraArgs -contains "--install-fnm"
+  $runAll = -not $runShims -and -not $runSystem -and -not $installPyenv -and -not $installFnm  # Default: run all checks
 
   # Handle pyenv installation
   if ($installPyenv) {
@@ -1251,6 +1253,39 @@ if ($RepoName -eq "doctor") {
     Write-Host "Next steps:" -ForegroundColor Cyan
     Write-Host "  1. Verify: pyenv --version" -ForegroundColor Gray
     Write-Host "  2. Install Python: pyenv install 3.11.9" -ForegroundColor Gray
+    Write-Host "  3. Use in projects via: strap setup" -ForegroundColor Gray
+    exit 0
+  }
+
+  # Handle fnm installation
+  if ($installFnm) {
+    Write-Host "=== INSTALLING FNM ===" -ForegroundColor Cyan
+    Write-Host ""
+
+    # Install fnm binary
+    $success = Install-FnmBinary
+    if (-not $success) {
+      Write-Host ""
+      Write-Host "[X] Failed to install fnm" -ForegroundColor Red
+      exit 1
+    }
+
+    # Create system-wide shim
+    Write-Host ""
+    Write-Host "Creating system-wide shim..." -ForegroundColor Cyan
+    $shimSuccess = New-FnmShim -ShimsDir $config.roots.shims
+    if (-not $shimSuccess) {
+      Write-Host ""
+      Write-Host "[X] Failed to create fnm shim" -ForegroundColor Red
+      exit 1
+    }
+
+    Write-Host ""
+    Write-Host "[OK] fnm installed and configured successfully!" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Next steps:" -ForegroundColor Cyan
+    Write-Host "  1. Verify: fnm --version" -ForegroundColor Gray
+    Write-Host "  2. Install Node: fnm install 18.17.0" -ForegroundColor Gray
     Write-Host "  3. Use in projects via: strap setup" -ForegroundColor Gray
     exit 0
   }

@@ -9,6 +9,14 @@ Stable operations - all major features implemented and working
 ## Active Work
 None (maintenance mode)
 
+## Recent Completions (Feb 12, 2026)
+- fnm integration for Node version management (mirrors pyenv-win pattern)
+- Auto-detection from .nvmrc/.node-version/package.json engines field
+- Auto-installation of Node versions during setup
+- Build step detection (automatic build/prepare execution)
+- Migrated all 5 Node projects to fnm (node_version tracked in registry)
+- Comprehensive test suite (19 tests), documentation, and migration tooling
+
 ## Blockers
 None
 
@@ -29,7 +37,7 @@ None
 Consolidate/audit/archive commands (disabled since 2026-02-02 incident)
 
 ---
-Last memory update: 2026-02-09
-Commits covered through: b06c590912b8b6369ecb12c3ab9a9d7b6d5de504
+Last memory update: 2026-02-12
+Commits covered through: dceddcb5b88f8cf69e35e96ae3e7dd5db12e08c4
 
-<!-- chinvex:last-commit:b9c6f321f6a3cbe5df312e3107ca3cb60bf98ccc -->
+<!-- chinvex:last-commit:dceddcb5b88f8cf69e35e96ae3e7dd5db12e08c4 -->

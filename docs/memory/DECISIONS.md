@@ -4,6 +4,7 @@
 # Decisions
 
 ## Recent (last 30 days)
+- Implemented fnm integration for Node version management (mirrors pyenv-win)
 - Implemented automatic Python version detection, download, and installation (a910b75)
 - Vendored PM2 and created system-wide shim to ensure availability (50fda24)
 - Added configure command for post-ingestion metadata updates (1b551bc)
@@ -15,6 +16,13 @@
 - Upgraded to Pester 5 for test modernization (f5b7914)
 
 ## 2026-02
+
+### 2026-02-12 — fnm integration for Node version management
+
+- **Why:** Node projects lacked automatic version management, requiring manual Node installation and creating version conflicts; needed parity with Python/pyenv-win integration
+- **Impact:** Created FnmIntegration.ps1 module (11 functions mirroring PyenvIntegration.ps1); auto-detects Node versions from .nvmrc/.node-version/package.json engines field; auto-installs via fnm during setup; stores node_version in registry; shims use version-specific Node executables; includes build step detection (automatic build/prepare); vendored fnm to P:\software\_node-tools\fnm; system-wide shim at P:\software\bin\fnm.{ps1,cmd}; comprehensive test suite (19 Pester 5 tests); documentation (docs/FNM_INTEGRATION.md); migration script (scripts/migrate-node-to-fnm.ps1); migrated all 5 Node projects
+- **Evidence:** Binary installation (faster than git clone); shim regeneration bugfix (re-resolves exe instead of stale registry value); corepack command fix (removed Python-style -m flag); doctor checks SYS003/004; happy-cli case study validated end-to-end workflow
+- **Key Design:** Follows pyenv-win pattern exactly (vendored binary, version detection priority, auto-install, registry tracking, shim resolution); improvements include faster installation, build step automation, regeneration fix
 
 ### 2026-02-08 — pyenv-win integration for Python version management
 

@@ -101,6 +101,50 @@ function Invoke-Setup {
       Write-Host "  (Docker also detected; not auto-running)" -ForegroundColor Yellow
     }
 
+    # Node version management via fnm
+    $detectedNodeVersion = $null
+    $fnmNodePath = $null
+
+    if ($stack -eq "node") {
+      # Detect required Node version
+      $detectedNodeVersion = Get-NodeVersionFromFile -RepoPath $resolvedPath
+
+      if ($detectedNodeVersion) {
+        Info "Detected Node version requirement: $detectedNodeVersion"
+
+        # Check if fnm is installed
+        if (Test-FnmInstalled) {
+          # Check if this version is already installed
+          $installedVersions = Get-FnmVersions
+          if ($installedVersions -notcontains $detectedNodeVersion) {
+            Write-Host "  Installing Node $detectedNodeVersion via fnm..." -ForegroundColor Cyan
+            $installSuccess = Install-FnmVersion -Version $detectedNodeVersion
+
+            if (-not $installSuccess) {
+              Write-Host ""
+              Write-Host "  Failed to install Node $detectedNodeVersion" -ForegroundColor Red
+              Write-Host "  Please install manually and try again" -ForegroundColor Yellow
+              Pop-Location
+              Die "Setup failed"
+            }
+          } else {
+            Info "Node $detectedNodeVersion already installed"
+          }
+
+          # Get path to fnm's Node executable
+          $fnmNodePath = Get-FnmNodePath -Version $detectedNodeVersion
+          if ($fnmNodePath) {
+            Info "Using Node: $fnmNodePath"
+          }
+        } else {
+          Write-Host ""
+          Write-Host "  [!] Node version $detectedNodeVersion required but fnm not installed" -ForegroundColor Yellow
+          Write-Host "  Run 'strap doctor --install-fnm' to install fnm, or install Node manually" -ForegroundColor Yellow
+          Write-Host ""
+        }
+      }
+    }
+
     # Python version management via pyenv
     $detectedPythonVersion = $null
     $pyenvPythonPath = $null
@@ -227,7 +271,7 @@ function Invoke-Setup {
         $enableCorepackFlag = if ($PSBoundParameters.ContainsKey('EnableCorepack')) { $EnableCorepack } else { $true }
         $pm = $PackageManager
 
-        # Step 1: Enable corepack if requested
+        # Step 1: Enable corepack
         if ($enableCorepackFlag) {
           $plan += @{
             Description = "Enable corepack"
@@ -249,6 +293,27 @@ function Invoke-Setup {
         $plan += @{
           Description = "Install Node dependencies via $pm"
           Command = "$pm install"
+        }
+
+        # Step 3: Run build step if present
+        $packageJsonPath = Join-Path $resolvedPath "package.json"
+        if (Test-Path $packageJsonPath) {
+          try {
+            $packageJson = Get-Content $packageJsonPath -Raw | ConvertFrom-Json
+            if ($packageJson.scripts.build) {
+              $plan += @{
+                Description = "Build project"
+                Command = "$pm run build"
+              }
+            } elseif ($packageJson.scripts.prepare) {
+              $plan += @{
+                Description = "Prepare project"
+                Command = "$pm run prepare"
+              }
+            }
+          } catch {
+            # Ignore JSON parse errors
+          }
         }
       }
 
@@ -354,6 +419,15 @@ function Invoke-Setup {
             $currentEntry.python_version = $detectedPythonVersion
           } else {
             $currentEntry | Add-Member -NotePropertyName 'python_version' -NotePropertyValue $detectedPythonVersion -Force
+          }
+        }
+
+        # Update Node version if detected
+        if ($detectedNodeVersion) {
+          if ($currentEntry.PSObject.Properties['node_version']) {
+            $currentEntry.node_version = $detectedNodeVersion
+          } else {
+            $currentEntry | Add-Member -NotePropertyName 'node_version' -NotePropertyValue $detectedNodeVersion -Force
           }
         }
 

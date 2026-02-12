@@ -22,11 +22,14 @@ PowerShell
 ## Commands (PowerShell)
 
 strap doctor                      # Diagnose installation and registry health
+strap doctor --install-fnm        # Install fnm (Fast Node Manager) for Node version management
+strap doctor --install-pyenv      # Install pyenv-win for Python version management
 strap clone <url>                 # Clone repo and auto-create shims
 strap adopt                       # Register existing repo with auto-shim discovery
 strap setup --repo <name>         # Install dependencies (auto-detects Python/Node/Go/Rust)
 strap list --verbose              # Show all managed repos with full details
 strap shim <name> --cmd "<cmd>"   # Create global launcher shim
+strap shim --regen <name>         # Regenerate shims (re-resolves executables)
 strap update --all --yes          # Update all repos at once
 strap move <name> --dest <path>   # Relocate repo and update registry
 strap contexts                    # View chinvex sync status
@@ -34,13 +37,14 @@ Invoke-Pester tests/powershell/ -Output Detailed  # Run test suite
 
 ## Current Sprint
 
-Stable operations - all major features implemented. Recent work: setup status tracking (09af3e0), instant system-wide availability (f6c2f14), chinvex integration (bd509da).
+Stable operations - all major features implemented. Recent work: fnm integration for Node version management, setup status tracking (09af3e0), instant system-wide availability (f6c2f14), chinvex integration (bd509da).
 
 ## Architecture
 
 - **Lifecycle Management**: Central registry tracks repos, shims, setup status, and metadata
 - **Shim System v3.1**: Dual-file (.ps1 + .cmd) launchers in P:\software\bin for cross-shell compatibility
 - **Auto-Discovery**: Parses pyproject.toml/setup.py/package.json to auto-create shims on clone/adopt
+- **Version Management**: fnm for Node (auto-detects from .nvmrc/.node-version/package.json), pyenv-win for Python
 - **Chinvex Integration**: Automatic sync with code intelligence (single source of truth)
 - **Template Bootstrapping**: Four templates (mono, node-ts-service, node-ts-web, python) with token replacement
 - **Metadata System**: Orthogonal fields (chinvex_depth, status, tags) replace single scope field
