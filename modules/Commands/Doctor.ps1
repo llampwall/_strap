@@ -334,6 +334,58 @@ function Invoke-DoctorNodeChecks {
                     "Run: fnm install $detectedVersion"
                 } else { $null }
             }
+
+            # NODE004: Check if newer versions available
+            try {
+                # Get latest available version (quick check - just get latest from fnm)
+                $fnmCmd = Get-FnmCommand
+                $env:FNM_DIR = Get-VendoredFnmPath
+                $allVersions = & $fnmCmd list-remote 2>$null
+                Remove-Item Env:\FNM_DIR -ErrorAction SilentlyContinue
+
+                if ($allVersions) {
+                    # Parse stable versions only
+                    $stableVersions = $allVersions | Where-Object {
+                        $_ -match '^v?(\d+\.\d+\.\d+)$'
+                    } | ForEach-Object {
+                        if ($_ -match '^v?(\d+\.\d+\.\d+)$') { $matches[1] }
+                    }
+
+                    # Get latest version
+                    $latestVersion = $stableVersions | Sort-Object {
+                        $parts = $_ -split '\.'
+                        [version]"$($parts[0]).$($parts[1]).$($parts[2])"
+                    } | Select-Object -Last 1
+
+                    if ($latestVersion) {
+                        # Parse current and latest versions
+                        $currentParts = $detectedVersion -split '\.'
+                        $latestParts = $latestVersion -split '\.'
+
+                        $isOutdated = $false
+                        if ([int]$latestParts[0] -gt [int]$currentParts[0]) {
+                            $isOutdated = $true  # Major version behind
+                        } elseif ([int]$latestParts[0] -eq [int]$currentParts[0] -and [int]$latestParts[1] -gt [int]$currentParts[1]) {
+                            $isOutdated = $true  # Minor version behind
+                        }
+
+                        $results += @{
+                            id = "NODE004"
+                            check = "Version current: $projectName"
+                            severity = "info"
+                            passed = -not $isOutdated
+                            message = if ($isOutdated) {
+                                "Node $detectedVersion is outdated (latest: $latestVersion)"
+                            } else { $null }
+                            fix = if ($isOutdated) {
+                                "Run: strap upgrade-node $projectName --latest"
+                            } else { $null }
+                        }
+                    }
+                }
+            } catch {
+                # Silently skip version check if fnm fails
+            }
         }
     }
 
@@ -391,11 +443,194 @@ function Format-DoctorNodeResults {
 
     $grouped = $Results | Group-Object severity
 
-    foreach ($group in $grouped | Sort-Object { @{critical=0;error=1;warning=2}[$_.Name] }) {
+    foreach ($group in $grouped | Sort-Object { @{critical=0;error=1;warning=2;info=3}[$_.Name] }) {
         $color = switch ($group.Name) {
             "critical" { "Red" }
             "error" { "Red" }
             "warning" { "Yellow" }
+            "info" { "Cyan" }
+            default { "White" }
+        }
+
+        $output += "[$($group.Name.ToUpper())]"
+
+        foreach ($result in $group.Group) {
+            if ($result.passed) {
+                $output += "  [OK] $($result.check)"
+            } else {
+                $output += "  [X] $($result.check)"
+                if ($result.message) { $output += "    $($result.message)" }
+                if ($result.fix) { $output += "    $($result.fix)" }
+            }
+        }
+        $output += ""
+    }
+
+    $passed = ($Results | Where-Object { $_.passed }).Count
+    $failed = ($Results | Where-Object { -not $_.passed }).Count
+    $output += "Passed: $passed | Failed: $failed"
+
+    return $output -join "`n"
+}
+
+function Invoke-DoctorPythonChecks {
+    <#
+    .SYNOPSIS
+    Validates Python projects have proper version management setup.
+
+    .DESCRIPTION
+    Checks that Python projects have version files, versions match registry,
+    detected versions are installed via pyenv, and warns about outdated versions.
+    #>
+    param(
+        [Parameter(Mandatory)][object]$Config,
+        [array]$Registry = @()
+    )
+
+    $results = @()
+
+    # Only run checks if pyenv is installed
+    if (-not (Test-PyenvInstalled)) {
+        return $results
+    }
+
+    # Get all Python projects
+    $pythonProjects = $Registry | Where-Object { $_.stack -eq 'python' }
+
+    foreach ($project in $pythonProjects) {
+        $projectName = $project.name
+        $projectPath = $project.path
+
+        # PY001: Python project has version file
+        $detectedVersion = Get-PythonVersionFromFile -RepoPath $projectPath
+        $hasVersionFile = $null -ne $detectedVersion
+
+        $results += @{
+            id = "PY001"
+            check = "Version file exists: $projectName"
+            severity = "warning"
+            passed = $hasVersionFile
+            message = if (-not $hasVersionFile) {
+                "No .python-version or pyproject.toml with python version found"
+            } else { $null }
+            fix = if (-not $hasVersionFile) {
+                "Add .python-version file: echo '3.12.0' > $projectPath\.python-version"
+            } else { $null }
+        }
+
+        if ($hasVersionFile) {
+            # PY002: Detected version matches registry
+            $registryVersion = if ($project.PSObject.Properties['python_version']) {
+                $project.python_version
+            } else { $null }
+
+            $versionsMatch = $detectedVersion -eq $registryVersion
+            $results += @{
+                id = "PY002"
+                check = "Version consistent: $projectName"
+                severity = "warning"
+                passed = $versionsMatch
+                message = if (-not $versionsMatch) {
+                    "Version file: $detectedVersion, Registry: $registryVersion"
+                } else { $null }
+                fix = if (-not $versionsMatch) {
+                    "Run: strap setup $projectName"
+                } else { $null }
+            }
+
+            # PY003: Detected version is installed via pyenv
+            $installedVersions = Get-PyenvVersions
+            $versionInstalled = $installedVersions -contains $detectedVersion
+
+            $results += @{
+                id = "PY003"
+                check = "Version installed: $projectName ($detectedVersion)"
+                severity = "warning"
+                passed = $versionInstalled
+                message = if (-not $versionInstalled) {
+                    "Python $detectedVersion not installed via pyenv"
+                } else { $null }
+                fix = if (-not $versionInstalled) {
+                    "Run: pyenv install $detectedVersion"
+                } else { $null }
+            }
+
+            # PY004: Check if newer versions available
+            try {
+                # Get latest available version
+                $pyenvCmd = Get-PyenvCommand
+                $env:PYENV = Get-VendoredPyenvPath
+                $allVersions = & $pyenvCmd install --list 2>$null
+                Remove-Item Env:\PYENV -ErrorAction SilentlyContinue
+
+                if ($allVersions) {
+                    # Parse stable versions only
+                    $stableVersions = $allVersions | Where-Object {
+                        $_ -match '^\s*(\d+\.\d+\.\d+)\s*$'
+                    } | ForEach-Object {
+                        if ($_ -match '^\s*(\d+\.\d+\.\d+)\s*$') { $matches[1] }
+                    }
+
+                    # Get latest version
+                    $latestVersion = $stableVersions | Sort-Object {
+                        $parts = $_ -split '\.'
+                        [version]"$($parts[0]).$($parts[1]).$($parts[2])"
+                    } | Select-Object -Last 1
+
+                    if ($latestVersion) {
+                        # Parse current and latest versions
+                        $currentParts = $detectedVersion -split '\.'
+                        $latestParts = $latestVersion -split '\.'
+
+                        $isOutdated = $false
+                        if ([int]$latestParts[0] -gt [int]$currentParts[0]) {
+                            $isOutdated = $true  # Major version behind
+                        } elseif ([int]$latestParts[0] -eq [int]$currentParts[0] -and [int]$latestParts[1] -gt [int]$currentParts[1]) {
+                            $isOutdated = $true  # Minor version behind
+                        }
+
+                        $results += @{
+                            id = "PY004"
+                            check = "Version current: $projectName"
+                            severity = "info"
+                            passed = -not $isOutdated
+                            message = if ($isOutdated) {
+                                "Python $detectedVersion is outdated (latest: $latestVersion)"
+                            } else { $null }
+                            fix = if ($isOutdated) {
+                                "Run: strap upgrade-python $projectName --latest"
+                            } else { $null }
+                        }
+                    }
+                }
+            } catch {
+                # Silently skip version check if pyenv fails
+            }
+        }
+    }
+
+    return $results
+}
+
+function Format-DoctorPythonResults {
+    param([Parameter(Mandatory)][array]$Results)
+
+    if ($Results.Count -eq 0) {
+        return ""
+    }
+
+    $output = @()
+    $output += "=== PYTHON VERSION MANAGEMENT ==="
+    $output += ""
+
+    $grouped = $Results | Group-Object severity
+
+    foreach ($group in $grouped | Sort-Object { @{critical=0;error=1;warning=2;info=3}[$_.Name] }) {
+        $color = switch ($group.Name) {
+            "critical" { "Red" }
+            "error" { "Red" }
+            "warning" { "Yellow" }
+            "info" { "Cyan" }
             default { "White" }
         }
 

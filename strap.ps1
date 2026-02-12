@@ -1221,9 +1221,10 @@ if ($RepoName -eq "doctor") {
   $runShims = $ExtraArgs -contains "--shims"
   $runSystem = $ExtraArgs -contains "--system"
   $runNode = $ExtraArgs -contains "--node"
+  $runPython = $ExtraArgs -contains "--python"
   $installPyenv = $ExtraArgs -contains "--install-pyenv"
   $installFnm = $ExtraArgs -contains "--install-fnm"
-  $runAll = -not $runShims -and -not $runSystem -and -not $runNode -and -not $installPyenv -and -not $installFnm  # Default: run all checks
+  $runAll = -not $runShims -and -not $runSystem -and -not $runNode -and -not $runPython -and -not $installPyenv -and -not $installFnm  # Default: run all checks
 
   # Handle pyenv installation
   if ($installPyenv) {
@@ -1320,6 +1321,18 @@ if ($RepoName -eq "doctor") {
     $results = Invoke-DoctorNodeChecks -Config $config -Registry $registry
     if ($results.Count -gt 0) {
       $output = Format-DoctorNodeResults $results
+      Write-Host $output
+
+      $failed = ($results | Where-Object { -not $_.passed -and $_.severity -in @("critical", "error") }).Count
+      if ($failed -gt 0) { $anyFailed = $true }
+    }
+  }
+
+  # Run Python version management checks
+  if ($runPython -or $runAll) {
+    $results = Invoke-DoctorPythonChecks -Config $config -Registry $registry
+    if ($results.Count -gt 0) {
+      $output = Format-DoctorPythonResults $results
       Write-Host $output
 
       $failed = ($results | Where-Object { -not $_.passed -and $_.severity -in @("critical", "error") }).Count
