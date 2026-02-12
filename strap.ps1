@@ -1650,6 +1650,48 @@ if ($RepoName -eq "upgrade-node") {
   exit 0
 }
 
+if ($RepoName -eq "upgrade-python") {
+  # Extract repo name from ExtraArgs (first non-flag argument)
+  $repoName = $null
+  $targetVersion = ""
+  $latest = $false
+  $listOnly = $false
+
+  # Parse arguments
+  $i = 0
+  while ($i -lt $ExtraArgs.Count) {
+    $arg = $ExtraArgs[$i]
+    if ($arg -eq "--latest") {
+      $latest = $true
+    } elseif ($arg -eq "--list-only") {
+      $listOnly = $true
+    } elseif ($arg -match '^--version=(.+)$') {
+      $targetVersion = $matches[1]
+    } elseif ($arg -eq "--version") {
+      $i++
+      if ($i -lt $ExtraArgs.Count) {
+        $targetVersion = $ExtraArgs[$i]
+      }
+    } elseif ($arg -notmatch '^--' -and -not $repoName) {
+      # First non-flag argument is the repo name
+      $repoName = $arg
+    }
+    $i++
+  }
+
+  $params = @{
+    RepoNameOrPath = $repoName
+    Latest = $latest
+    ListOnly = $listOnly
+    NonInteractive = $Yes.IsPresent
+    StrapRootPath = $TemplateRoot
+  }
+  if ($targetVersion) { $params.Version = $targetVersion }
+
+  $null = Invoke-UpgradePython @params
+  exit 0
+}
+
 if ($RepoName -eq "update") {
   # Extract name from ExtraArgs (if not using --all)
   $nameToUpdate = $null
