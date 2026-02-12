@@ -1609,11 +1609,13 @@ if ($RepoName -eq "setup") {
 }
 
 if ($RepoName -eq "upgrade-node") {
+  # Extract repo name from ExtraArgs (first non-flag argument)
+  $repoName = $null
   $targetVersion = ""
   $latest = $false
   $listOnly = $false
 
-  # Parse flags
+  # Parse arguments
   $i = 0
   while ($i -lt $ExtraArgs.Count) {
     $arg = $ExtraArgs[$i]
@@ -1628,12 +1630,15 @@ if ($RepoName -eq "upgrade-node") {
       if ($i -lt $ExtraArgs.Count) {
         $targetVersion = $ExtraArgs[$i]
       }
+    } elseif ($arg -notmatch '^--' -and -not $repoName) {
+      # First non-flag argument is the repo name
+      $repoName = $arg
     }
     $i++
   }
 
   $params = @{
-    RepoNameOrPath = $Repo
+    RepoNameOrPath = $repoName
     Latest = $latest
     ListOnly = $listOnly
     NonInteractive = $Yes.IsPresent
@@ -1641,7 +1646,7 @@ if ($RepoName -eq "upgrade-node") {
   }
   if ($targetVersion) { $params.Version = $targetVersion }
 
-  Invoke-UpgradeNode @params
+  $null = Invoke-UpgradeNode @params
   exit 0
 }
 

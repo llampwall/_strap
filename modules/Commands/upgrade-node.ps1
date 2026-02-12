@@ -105,7 +105,7 @@ function Invoke-UpgradeNode {
 
     if (-not $newerVersions -or $newerVersions.Count -eq 0) {
         Write-Host "You're already on the latest version!" -ForegroundColor Green
-        exit 0
+        return
     }
 
     # Get latest version
@@ -116,24 +116,46 @@ function Invoke-UpgradeNode {
     Write-Host ""
 
     # Group by major.minor
-    $grouped = $newerVersions | Group-Object {
-        if ($_ -match '^(\d+)\.(\d+)') { "$($matches[1]).$($matches[2])" }
-    } | Sort-Object {
-        $parts = $_.Name -split '\.'
-        [version]"$($parts[0]).$($parts[1]).0"
-    }
+    $grouped = @($newerVersions | Group-Object -Property {
+        if ($_ -match '^(\d+)\.(\d+)') {
+            return "$($matches[1]).$($matches[2])"
+        } else {
+            return "unknown"
+        }
+    })
 
-    foreach ($group in $grouped) {
-        $latest = $group.Group | Select-Object -Last 1
-        $isLatest = $latest -eq $latestVersion
-        $marker = if ($isLatest) { " (latest)" } else { "" }
-        Write-Host "  $($group.Name).x → $latest$marker" -ForegroundColor $(if ($isLatest) { "Green" } else { "Gray" })
+    # Sort groups by version
+    $sorted = @($grouped | Sort-Object -Property {
+        if ($_.Name -ne "unknown") {
+            $parts = $_.Name -split '\.'
+            if ($parts.Count -ge 2) {
+                return [version]"$($parts[0]).$($parts[1]).0"
+            }
+        }
+        return [version]"0.0.0"
+    })
+
+    # Display grouped versions
+    & {
+        foreach ($group in $sorted) {
+            if ($group.Name -eq "unknown") { continue }
+
+            # Get the last item from the group
+            $items = @($group.Group)
+            if ($items.Count -gt 0) {
+                $latest = $items[-1]  # Use negative indexing
+                $isLatest = $latest -eq $latestVersion
+                $marker = if ($isLatest) { " (latest)" } else { "" }
+                $color = if ($isLatest) { "Green" } else { "Gray" }
+                Write-Host "  $($group.Name).x → $latest$marker" -ForegroundColor $color
+            }
+        }
     }
 
     Write-Host ""
 
     if ($ListOnly) {
-        exit 0
+        return
     }
 
     # Determine target version
@@ -185,7 +207,7 @@ function Invoke-UpgradeNode {
         $response = Read-Host "Proceed with upgrade? (y/n)"
         if ($response -ne "y") {
             Info "Aborted by user"
-            exit 0
+            return
         }
     }
 
