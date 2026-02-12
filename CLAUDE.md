@@ -21,12 +21,16 @@ PowerShell
 
 ## Commands (PowerShell)
 
-strap doctor                      # Diagnose installation and registry health
+strap doctor                      # Diagnose installation and registry health (all checks)
+strap doctor --system             # Check system dependencies only
+strap doctor --shims              # Check shim health only
+strap doctor --node               # Check Node version management only
 strap doctor --install-fnm        # Install fnm (Fast Node Manager) for Node version management
 strap doctor --install-pyenv      # Install pyenv-win for Python version management
 strap clone <url>                 # Clone repo and auto-create shims
 strap adopt                       # Register existing repo with auto-shim discovery
 strap setup --repo <name>         # Install dependencies (auto-detects Python/Node/Go/Rust)
+strap upgrade-node <name>         # Upgrade Node version for a project (--latest, --list-only)
 strap list --verbose              # Show all managed repos with full details
 strap shim <name> --cmd "<cmd>"   # Create global launcher shim
 strap shim --regen <name>         # Regenerate shims (re-resolves executables)

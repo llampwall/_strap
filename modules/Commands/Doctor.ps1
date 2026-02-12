@@ -253,11 +253,140 @@ function Invoke-DoctorSystemChecks {
     return $results
 }
 
+function Invoke-DoctorNodeChecks {
+    <#
+    .SYNOPSIS
+    Validates Node projects have proper version management setup.
+
+    .DESCRIPTION
+    Checks that Node projects have version files, versions match registry,
+    and detected versions are installed via fnm.
+    #>
+    param(
+        [Parameter(Mandatory)][object]$Config,
+        [array]$Registry = @()
+    )
+
+    $results = @()
+
+    # Only run checks if fnm is installed
+    if (-not (Test-FnmInstalled)) {
+        return $results
+    }
+
+    # Get all Node projects
+    $nodeProjects = $Registry | Where-Object { $_.stack -eq 'node' }
+
+    foreach ($project in $nodeProjects) {
+        $projectName = $project.name
+        $projectPath = $project.path
+
+        # NODE001: Node project has version file
+        $detectedVersion = Get-NodeVersionFromFile -RepoPath $projectPath
+        $hasVersionFile = $null -ne $detectedVersion
+
+        $results += @{
+            id = "NODE001"
+            check = "Version file exists: $projectName"
+            severity = "warning"
+            passed = $hasVersionFile
+            message = if (-not $hasVersionFile) {
+                "No .nvmrc, .node-version, or package.json engines.node found"
+            } else { $null }
+            fix = if (-not $hasVersionFile) {
+                "Add .nvmrc file: echo '20.19.0' > $projectPath\.nvmrc"
+            } else { $null }
+        }
+
+        if ($hasVersionFile) {
+            # NODE002: Detected version matches registry
+            $registryVersion = if ($project.PSObject.Properties['node_version']) {
+                $project.node_version
+            } else { $null }
+
+            $versionsMatch = $detectedVersion -eq $registryVersion
+            $results += @{
+                id = "NODE002"
+                check = "Version consistent: $projectName"
+                severity = "warning"
+                passed = $versionsMatch
+                message = if (-not $versionsMatch) {
+                    "Version file: $detectedVersion, Registry: $registryVersion"
+                } else { $null }
+                fix = if (-not $versionsMatch) {
+                    "Run: strap setup $projectName"
+                } else { $null }
+            }
+
+            # NODE003: Detected version is installed via fnm
+            $installedVersions = Get-FnmVersions
+            $versionInstalled = $installedVersions -contains $detectedVersion
+
+            $results += @{
+                id = "NODE003"
+                check = "Version installed: $projectName ($detectedVersion)"
+                severity = "warning"
+                passed = $versionInstalled
+                message = if (-not $versionInstalled) {
+                    "Node $detectedVersion not installed via fnm"
+                } else { $null }
+                fix = if (-not $versionInstalled) {
+                    "Run: fnm install $detectedVersion"
+                } else { $null }
+            }
+        }
+    }
+
+    return $results
+}
+
 function Format-DoctorSystemResults {
     param([Parameter(Mandatory)][array]$Results)
 
     $output = @()
     $output += "=== SYSTEM DEPENDENCIES ==="
+    $output += ""
+
+    $grouped = $Results | Group-Object severity
+
+    foreach ($group in $grouped | Sort-Object { @{critical=0;error=1;warning=2}[$_.Name] }) {
+        $color = switch ($group.Name) {
+            "critical" { "Red" }
+            "error" { "Red" }
+            "warning" { "Yellow" }
+            default { "White" }
+        }
+
+        $output += "[$($group.Name.ToUpper())]"
+
+        foreach ($result in $group.Group) {
+            if ($result.passed) {
+                $output += "  [OK] $($result.check)"
+            } else {
+                $output += "  [X] $($result.check)"
+                if ($result.message) { $output += "    $($result.message)" }
+                if ($result.fix) { $output += "    $($result.fix)" }
+            }
+        }
+        $output += ""
+    }
+
+    $passed = ($Results | Where-Object { $_.passed }).Count
+    $failed = ($Results | Where-Object { -not $_.passed }).Count
+    $output += "Passed: $passed | Failed: $failed"
+
+    return $output -join "`n"
+}
+
+function Format-DoctorNodeResults {
+    param([Parameter(Mandatory)][array]$Results)
+
+    if ($Results.Count -eq 0) {
+        return ""
+    }
+
+    $output = @()
+    $output += "=== NODE VERSION MANAGEMENT ==="
     $output += ""
 
     $grouped = $Results | Group-Object severity

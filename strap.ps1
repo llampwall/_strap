@@ -1220,9 +1220,10 @@ if ($RepoName -eq "doctor") {
 
   $runShims = $ExtraArgs -contains "--shims"
   $runSystem = $ExtraArgs -contains "--system"
+  $runNode = $ExtraArgs -contains "--node"
   $installPyenv = $ExtraArgs -contains "--install-pyenv"
   $installFnm = $ExtraArgs -contains "--install-fnm"
-  $runAll = -not $runShims -and -not $runSystem -and -not $installPyenv -and -not $installFnm  # Default: run all checks
+  $runAll = -not $runShims -and -not $runSystem -and -not $runNode -and -not $installPyenv -and -not $installFnm  # Default: run all checks
 
   # Handle pyenv installation
   if ($installPyenv) {
@@ -1308,9 +1309,22 @@ if ($RepoName -eq "doctor") {
     $results = Invoke-DoctorShimChecks -Config $config -Registry $registry
     $output = Format-DoctorShimResults $results
     Write-Host $output
+    Write-Host ""
 
     $failed = ($results | Where-Object { -not $_.passed -and $_.severity -in @("critical", "error") }).Count
     if ($failed -gt 0) { $anyFailed = $true }
+  }
+
+  # Run Node version management checks
+  if ($runNode -or $runAll) {
+    $results = Invoke-DoctorNodeChecks -Config $config -Registry $registry
+    if ($results.Count -gt 0) {
+      $output = Format-DoctorNodeResults $results
+      Write-Host $output
+
+      $failed = ($results | Where-Object { -not $_.passed -and $_.severity -in @("critical", "error") }).Count
+      if ($failed -gt 0) { $anyFailed = $true }
+    }
   }
 
   exit $(if ($anyFailed) { 1 } else { 0 })
@@ -1591,6 +1605,43 @@ if ($RepoName -eq "rename") {
 
 if ($RepoName -eq "setup") {
   Invoke-Setup -RepoNameOrPath $Repo -ForceStack $Stack -VenvPath $Venv -UseUv:$Uv.IsPresent -PythonExe $Python -PackageManager $Pm -EnableCorepack:$Corepack.IsPresent -NonInteractive:$Yes.IsPresent -DryRunMode:$DryRun.IsPresent -StrapRootPath $TemplateRoot
+  exit 0
+}
+
+if ($RepoName -eq "upgrade-node") {
+  $targetVersion = ""
+  $latest = $false
+  $listOnly = $false
+
+  # Parse flags
+  $i = 0
+  while ($i -lt $ExtraArgs.Count) {
+    $arg = $ExtraArgs[$i]
+    if ($arg -eq "--latest") {
+      $latest = $true
+    } elseif ($arg -eq "--list-only") {
+      $listOnly = $true
+    } elseif ($arg -match '^--version=(.+)$') {
+      $targetVersion = $matches[1]
+    } elseif ($arg -eq "--version") {
+      $i++
+      if ($i -lt $ExtraArgs.Count) {
+        $targetVersion = $ExtraArgs[$i]
+      }
+    }
+    $i++
+  }
+
+  $params = @{
+    RepoNameOrPath = $Repo
+    Latest = $latest
+    ListOnly = $listOnly
+    NonInteractive = $Yes.IsPresent
+    StrapRootPath = $TemplateRoot
+  }
+  if ($targetVersion) { $params.Version = $targetVersion }
+
+  Invoke-UpgradeNode @params
   exit 0
 }
 
