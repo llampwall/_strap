@@ -7,6 +7,7 @@ function Invoke-UpgradePython {
         [string]$Version,          # Target version (optional)
         [switch]$Latest,           # Upgrade to latest stable
         [switch]$ListOnly,         # Just show available versions
+        [switch]$All,              # Upgrade all Python projects
         [switch]$NonInteractive,
         [string]$StrapRootPath
     )
@@ -18,6 +19,64 @@ function Invoke-UpgradePython {
     # Check pyenv is installed
     if (-not (Test-PyenvInstalled)) {
         Die "pyenv-win not installed. Run 'strap doctor --install-pyenv' first."
+    }
+
+    # Handle --all flag: upgrade all Python projects
+    if ($All) {
+        $pythonProjects = @($registry | Where-Object { $_.stack -eq 'python' })
+
+        if ($pythonProjects.Count -eq 0) {
+            Write-Host "No Python projects found in registry." -ForegroundColor Yellow
+            return
+        }
+
+        Write-Host "=== BATCH UPGRADE: ALL PYTHON PROJECTS ===" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "Found $($pythonProjects.Count) Python project(s)" -ForegroundColor Gray
+        Write-Host ""
+
+        $results = @()
+        foreach ($project in $pythonProjects) {
+            Write-Host "--- Upgrading: $($project.name) ---" -ForegroundColor Cyan
+
+            # Recursively call this function for each project
+            $params = @{
+                RepoNameOrPath = $project.name
+                Latest = $Latest
+                ListOnly = $ListOnly
+                NonInteractive = $true  # Force non-interactive for batch
+                StrapRootPath = $StrapRootPath
+            }
+            if ($Version) { $params.Version = $Version }
+
+            try {
+                Invoke-UpgradePython @params
+                $results += @{ name = $project.name; status = "SUCCESS" }
+            } catch {
+                Write-Host "  [!] Error: $_" -ForegroundColor Red
+                $results += @{ name = $project.name; status = "FAILED"; error = $_ }
+            }
+
+            Write-Host ""
+        }
+
+        # Summary
+        Write-Host "=== BATCH UPGRADE SUMMARY ===" -ForegroundColor Cyan
+        $succeeded = @($results | Where-Object { $_.status -eq "SUCCESS" })
+        $failed = @($results | Where-Object { $_.status -eq "FAILED" })
+
+        Write-Host "Succeeded: $($succeeded.Count)" -ForegroundColor Green
+        Write-Host "Failed: $($failed.Count)" -ForegroundColor $(if ($failed.Count -gt 0) { "Red" } else { "Gray" })
+
+        if ($failed.Count -gt 0) {
+            Write-Host ""
+            Write-Host "Failed projects:" -ForegroundColor Red
+            foreach ($f in $failed) {
+                Write-Host "  - $($f.name): $($f.error)" -ForegroundColor Red
+            }
+        }
+
+        return
     }
 
     # Determine repo path

@@ -1614,6 +1614,7 @@ if ($RepoName -eq "upgrade-node") {
   $targetVersion = ""
   $latest = $false
   $listOnly = $false
+  $upgradeAll = $false
 
   # Parse arguments
   $i = 0
@@ -1623,6 +1624,8 @@ if ($RepoName -eq "upgrade-node") {
       $latest = $true
     } elseif ($arg -eq "--list-only") {
       $listOnly = $true
+    } elseif ($arg -eq "--all") {
+      $upgradeAll = $true
     } elseif ($arg -match '^--version=(.+)$') {
       $targetVersion = $matches[1]
     } elseif ($arg -eq "--version") {
@@ -1641,6 +1644,7 @@ if ($RepoName -eq "upgrade-node") {
     RepoNameOrPath = $repoName
     Latest = $latest
     ListOnly = $listOnly
+    All = $upgradeAll
     NonInteractive = $Yes.IsPresent
     StrapRootPath = $TemplateRoot
   }
@@ -1656,6 +1660,7 @@ if ($RepoName -eq "upgrade-python") {
   $targetVersion = ""
   $latest = $false
   $listOnly = $false
+  $upgradeAll = $false
 
   # Parse arguments
   $i = 0
@@ -1665,6 +1670,8 @@ if ($RepoName -eq "upgrade-python") {
       $latest = $true
     } elseif ($arg -eq "--list-only") {
       $listOnly = $true
+    } elseif ($arg -eq "--all") {
+      $upgradeAll = $true
     } elseif ($arg -match '^--version=(.+)$') {
       $targetVersion = $matches[1]
     } elseif ($arg -eq "--version") {
@@ -1683,6 +1690,7 @@ if ($RepoName -eq "upgrade-python") {
     RepoNameOrPath = $repoName
     Latest = $latest
     ListOnly = $listOnly
+    All = $upgradeAll
     NonInteractive = $Yes.IsPresent
     StrapRootPath = $TemplateRoot
   }
