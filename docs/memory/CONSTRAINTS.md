@@ -15,6 +15,8 @@
 - PM2 vendored location: `P:\software\_node-tools\pm2`
 - pyenv-win vendored location: `P:\software\_python-tools\pyenv-win`
 - Python versions directory: `P:\software\_python-tools\pyenv-win\pyenv-win\versions` (managed by pyenv-win)
+- fnm vendored location: `P:\software\_node-tools\fnm` (added 2026-02-12)
+- Node versions directory: managed by fnm (added 2026-02-12)
 
 ## Rules
 - Never run consolidate/audit/snapshot/migrate/archive commands (kill-switched since 2026-02-02)
@@ -33,6 +35,8 @@
 - Python installations validated after install by running python --version (updated 2026-02-08)
 - Conservative default: pip (not uv) for dependency installation unless --use-uv specified (updated 2026-02-08)
 - Registry automatically backed up before every write with timestamp; pruned to keep 30 most recent (added 2026-02-09)
+- Node versions auto-detected from .nvmrc, .node-version, or package.json engines.node field; stored in registry as node_version (added 2026-02-12)
+- Node installations handled by fnm during setup if version missing (added 2026-02-12)
 
 ## Key Facts
 - Shim types: simple (direct exec), venv (Python), node (Node.js PATH setup)
@@ -44,6 +48,9 @@
 - Configure command flags: --depth, --status, --tags, --add-tags, --remove-tags, --yes, --dry-run, --json
 - Python version detection order: .python-version, pyproject.toml requires-python, requirements.txt comments
 - pyenv-win shim location: `P:\software\bin\pyenv.{ps1,cmd}` (created by strap doctor --install-pyenv)
+- Node version detection order: .nvmrc, .node-version, package.json engines.node (added 2026-02-12)
+- fnm shim location: `P:\software\bin\fnm.{ps1,cmd}` (created by strap doctor --install-fnm) (added 2026-02-12)
+- Doctor check IDs: SHIM001-009, SYS001-004, NODE001-004, PY001-004 (updated 2026-02-12)
 
 ## Hazards
 - PowerShell unwraps single-element arrays (use comma operator: `,$array`)
@@ -53,6 +60,7 @@
 - Cross-volume moves require git integrity verification (fsck + object count)
 - PM2 services must be stopped before consolidation moves
 - Chinvex context purge requires stdin confirmation ("y") - use `Invoke-Chinvex -StdIn "y"`
+- PowerShell parameter binding can misinterpret pipeline values as parameters; wrap loops in script blocks (`& { }`) when accessing properties (added 2026-02-12)
 
 ## Superseded
 (None yet)

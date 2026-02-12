@@ -10,34 +10,34 @@ Stable operations - all major features implemented and working
 None (maintenance mode)
 
 ## Recent Completions (Feb 12, 2026)
+- Version upgrade commands (upgrade-node, upgrade-python) with --latest/--version/--list-only flags
+- Batch upgrade with --all flag (upgrade all Node or Python projects at once)
+- Doctor health checks with version outdated warnings (NODE004, PY004)
 - fnm integration for Node version management (mirrors pyenv-win pattern)
-- Auto-detection from .nvmrc/.node-version/package.json engines field
-- Auto-installation of Node versions during setup
-- Build step detection (automatic build/prepare execution)
+- Comprehensive test suite (19 fnm tests), documentation (FNM_INTEGRATION.md, CLAUDE.md)
 - Migrated all 5 Node projects to fnm (node_version tracked in registry)
-- Comprehensive test suite (19 tests), documentation, and migration tooling
 
 ## Blockers
 None
 
 ## Next Actions
+- Monitor upgrade commands in production use
 - Monitor setup health via HEALTH column in `strap list`
-- Monitor pyenv-win integration across different Python projects and version formats
-- Monitor major.minor → latest patch version resolution accuracy
+- Monitor pyenv-win integration across different Python projects
 - Use configure command to optimize chinvex syncing (metadata vs full reingest)
-- Consider enabling chinvex integration by default in new installs
 
 ## Quick Reference
 - Install: Add `P:\software\_strap` to PATH, then `strap doctor`
 - Test: `Invoke-Pester tests/powershell/ -Output Detailed`
+- Upgrade: `strap upgrade-node <name> --latest` or `strap upgrade-python <name> --latest`
+- Batch upgrade: `strap upgrade-node --all --latest`
 - Entry point: `strap.ps1` (invoked via `strap.cmd`)
-- Configure: `strap configure <name> --depth <light|full>` (modify metadata post-adoption)
 
 ## Out of Scope (for now)
 Consolidate/audit/archive commands (disabled since 2026-02-02 incident)
 
 ---
 Last memory update: 2026-02-12
-Commits covered through: dceddcb5b88f8cf69e35e96ae3e7dd5db12e08c4
+Commits covered through: 403a1f307138b63b8c93b2d5cf987721ec69c009
 
-<!-- chinvex:last-commit:dceddcb5b88f8cf69e35e96ae3e7dd5db12e08c4 -->
+<!-- chinvex:last-commit:403a1f307138b63b8c93b2d5cf987721ec69c009 -->
