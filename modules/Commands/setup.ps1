@@ -268,14 +268,51 @@ function Invoke-Setup {
 
       "node" {
         # Defaults
-        $enableCorepackFlag = if ($PSBoundParameters.ContainsKey('EnableCorepack')) { $EnableCorepack } else { $true }
         $pm = $PackageManager
 
-        # Step 1: Enable corepack
-        if ($enableCorepackFlag) {
+        # Determine if corepack is needed
+        # Only enable corepack if:
+        # 1. User explicitly requested it via --enable-corepack, OR
+        # 2. package.json has a packageManager field (indicates corepack usage)
+        $needsCorepack = $false
+        $packageJsonPath = Join-Path $resolvedPath "package.json"
+        if (Test-Path $packageJsonPath) {
+          try {
+            $packageJson = Get-Content $packageJsonPath -Raw | ConvertFrom-Json
+            if ($packageJson.PSObject.Properties['packageManager']) {
+              $needsCorepack = $true
+            }
+          } catch {
+            # Ignore JSON parse errors
+          }
+        }
+
+        # Override if user explicitly set the flag
+        if ($PSBoundParameters.ContainsKey('EnableCorepack')) {
+          $needsCorepack = $EnableCorepack
+        }
+
+        # Step 1: Enable corepack (if needed)
+        if ($needsCorepack) {
+          # Use fnm-managed Node if available, otherwise fall back to global
+          # Corepack is bundled with Node, so we use the same directory
+          if ($fnmNodePath) {
+            $nodeDir = Split-Path $fnmNodePath -Parent
+            $corepackPath = Join-Path $nodeDir "corepack.cmd"
+            if (Test-Path $corepackPath) {
+              $corepackCmd = "& '$corepackPath' enable"
+            } else {
+              # Fallback to global corepack (should not happen with modern Node)
+              Warn "corepack.cmd not found in fnm Node directory, using global"
+              $corepackCmd = "corepack enable"
+            }
+          } else {
+            $corepackCmd = "corepack enable"
+          }
+
           $plan += @{
             Description = "Enable corepack"
-            Command = "corepack enable"
+            Command = $corepackCmd
           }
         }
 
@@ -367,13 +404,29 @@ function Invoke-Setup {
 
     # Execute plan
     Write-Host "=== EXECUTING ===" -ForegroundColor Cyan
+
+    # Prepare environment for fnm-managed Node (if applicable)
+    $nodeEnvSetup = ""
+    if ($stack -eq "node" -and $fnmNodePath) {
+      $nodeDir = Split-Path $fnmNodePath -Parent
+      # Prepend fnm Node directory to PATH for this execution session
+      $nodeEnvSetup = "`$env:PATH = '$nodeDir;' + `$env:PATH; "
+    }
+
     foreach ($step in $plan) {
       Info $step.Description
       Write-Host "  > $($step.Command)" -ForegroundColor Gray
 
       # Execute command using pwsh to avoid Invoke-Expression issues
       # This properly handles quoted paths and special characters
-      $output = pwsh -NoProfile -Command $step.Command 2>&1
+      # For Node projects with fnm, prepend the fnm Node directory to PATH
+      $cmdWithEnv = if ($nodeEnvSetup) {
+        $nodeEnvSetup + $step.Command
+      } else {
+        $step.Command
+      }
+
+      $output = pwsh -NoProfile -Command $cmdWithEnv 2>&1
       if ($LASTEXITCODE -ne 0) {
         Write-Host ""
         Write-Host "ERROR: Command failed with exit code $LASTEXITCODE" -ForegroundColor Red

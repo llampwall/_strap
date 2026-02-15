@@ -132,8 +132,10 @@ When `strap setup` runs on a Node project:
 2. **Checks if installed** via `Get-FnmVersions`
 3. **Auto-installs** if missing via `Install-FnmVersion`
 4. **Validates** installation by running `node --version`
-5. **Stores** `node_version` in registry
-6. **Runs build step** if `package.json` has `build` or `prepare` script
+5. **Enables corepack** (if `package.json` has `packageManager` field or `--enable-corepack` flag)
+6. **Sets up environment** to use fnm-managed Node (prepends to PATH)
+7. **Stores** `node_version` in registry
+8. **Runs build step** if `package.json` has `build` or `prepare` script
 
 Example output:
 ```
@@ -146,8 +148,10 @@ Using Node: P:\software\_node-tools\fnm\node-versions\v20.19.0\installation\node
 
 === SETUP PLAN ===
 Commands to execute:
-  1. Install Node dependencies via yarn
-  2. Build project
+  1. Enable corepack
+     & 'P:\software\_node-tools\fnm\node-versions\v20.19.0\installation\corepack.cmd' enable
+  2. Install Node dependencies via yarn
+  3. Build project
 
 Setup completed successfully
 registry updated
@@ -239,6 +243,52 @@ fnm integration follows the exact architectural pattern established by pyenv-win
 - Binary installation (no git clone needed)
 - Build step detection (automatic `yarn build`)
 - Shim regeneration fix (re-resolves exe instead of using stale registry value)
+
+## Corepack Integration
+
+Starting with Node 16.9.0, corepack is bundled with Node and provides package manager version management.
+
+### Automatic Corepack Detection
+
+`strap setup` automatically enables corepack if:
+1. `package.json` has a `packageManager` field, OR
+2. User passes `--enable-corepack` flag
+
+### Example: Using pnpm via Corepack
+
+```json
+{
+  "name": "my-project",
+  "packageManager": "pnpm@8.6.0"
+}
+```
+
+When you run `strap setup`:
+```
+=== SETUP PLAN ===
+Commands to execute:
+  1. Enable corepack
+     & 'P:\software\_node-tools\fnm\node-versions\v20.19.0\installation\corepack.cmd' enable
+  2. Install Node dependencies via pnpm
+```
+
+**Important:** Corepack uses the **fnm-managed Node**, not the global Node. This prevents permission errors when you have nvm installed globally.
+
+### Skipping Corepack
+
+To skip corepack even if `packageManager` is defined:
+
+```powershell
+strap setup --enable-corepack:$false
+```
+
+## Environment Isolation
+
+All Node commands (`npm install`, `pnpm install`, `yarn build`, etc.) run with the fnm Node directory prepended to PATH. This ensures:
+
+✅ Correct Node version is used (no conflicts with nvm/global Node)
+✅ Corepack writes to fnm directory (no permission errors)
+✅ Package managers use the right Node version
 
 ## Troubleshooting
 
