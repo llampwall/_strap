@@ -75,8 +75,9 @@ Manual shim creation is still available for custom launchers or aliases.
 
 - Windows PowerShell (pwsh recommended)
 - Git
-- Node 20+ (for node templates) + pnpm (via Corepack or global install)
+- Node 20+ (for node templates, or use fnm for automatic version management) + pnpm (optional, via Corepack)
 - Python 3.11+ (for python template, or use pyenv-win for automatic version management)
+- fnm (optional, auto-installed via `strap doctor --install-fnm` for Node version management)
 - pyenv-win (optional, auto-installed via `strap doctor --install-pyenv` for Python version management)
 - `templates/context-hook.cmd` (bundled in this repo)
 
@@ -187,11 +188,15 @@ strap setup [--yes] [--dry-run] [--stack python|node|go|rust] [--repo <name>]
 strap setup [--venv <path>] [--uv] [--python <exe>] [--pm npm|pnpm|yarn] [--corepack]
 strap update <name> [--yes] [--dry-run] [--rebase] [--stash] [--setup]
 strap update --all [--tool] [--software] [--yes] [--dry-run] [--rebase] [--stash] [--setup]
+strap upgrade-node <name> [--latest] [--version <version>] [--list-only] [--yes]
+strap upgrade-node --all [--latest] [--version <version>] [--yes]
+strap upgrade-python <name> [--latest] [--version <version>] [--list-only] [--yes]
+strap upgrade-python --all [--latest] [--version <version>] [--yes]
 strap shim <name> --- <command...> [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
 strap shim <name> --cmd "<command>" [--cwd <path>] [--repo <name>] [--force] [--dry-run] [--yes]
 strap uninstall <name> [--yes]
 strap purge [--cleanup-chinvex] [--yes] [--dry-run]
-strap doctor [--json]
+strap doctor [--system] [--shims] [--node] [--python] [--install-fnm] [--install-pyenv] [--json]
 # strap migrate [--yes] [--dry-run] [--backup] [--json] [--to <version>] [--plan]
 # strap snapshot [--output <path>] [--scan <dir>...]
 # strap audit <name|--all> [--json] [--rebuild-index]
@@ -258,7 +263,8 @@ strap doctor [--json]
 - `--uv` — Python: use uv for installs (default on)
 - `--python <exe>` — Python: executable for venv creation (default `python`)
 - `--pm <manager>` — Node: force package manager (npm|pnpm|yarn)
-- `--corepack` — Node: enable corepack before install (default on)
+- `--enable-corepack` — Node: enable corepack (auto-enabled if package.json has packageManager field)
+- `--no-corepack` — Node: disable corepack even if packageManager field present
 - `--dry-run` — preview plan without executing
 - `--yes` — skip confirmation prompts
 
@@ -269,6 +275,22 @@ strap doctor [--json]
 - `--stash` — auto-stash dirty working tree before update, restore after
 - `--setup` — run strap setup after successful update
 - `--dry-run` — preview operations without executing
+- `--yes` — skip confirmation prompts
+
+**upgrade-node**
+- `<name>` — registered repo name to upgrade (must be a Node project)
+- `--all` — upgrade all registered Node repos to the same version
+- `--latest` — upgrade to latest stable version (queries fnm list-remote)
+- `--version <version>` — upgrade to specific version (e.g., `22.11.0`)
+- `--list-only` — list available upgrades without applying (single repo only)
+- `--yes` — skip confirmation prompts
+
+**upgrade-python**
+- `<name>` — registered repo name to upgrade (must be a Python project)
+- `--all` — upgrade all registered Python repos to the same version
+- `--latest` — upgrade to latest stable version (queries pyenv install --list)
+- `--version <version>` — upgrade to specific version (e.g., `3.12.7`)
+- `--list-only` — list available upgrades without applying (single repo only)
 - `--yes` — skip confirmation prompts
 
 **shim**
@@ -437,6 +459,30 @@ strap update --all --yes --setup
 # Preview update without executing
 strap update youtube-md --dry-run
 
+# Upgrade Node version for a project
+strap upgrade-node my-api --latest
+
+# Upgrade to specific Node version
+strap upgrade-node my-api --version 22.11.0
+
+# Check what upgrades are available
+strap upgrade-node my-api --list-only
+
+# Upgrade all Node projects to latest
+strap upgrade-node --all --latest --yes
+
+# Upgrade Python version for a project
+strap upgrade-python my-tool --latest
+
+# Upgrade to specific Python version
+strap upgrade-python my-tool --version 3.12.7
+
+# Check what Python upgrades are available
+strap upgrade-python my-tool --list-only
+
+# Upgrade all Python projects to latest
+strap upgrade-python --all --latest --yes
+
 # Check registry version and system health
 strap doctor
 
@@ -585,6 +631,7 @@ Lifecycle management uses a JSON registry at `registry.json` (in the strap direc
 - `setup` — setup status object with fields: `result` ("succeeded", "failed", "skipped", or null), `error` (error message if failed), `last_attempt` (ISO 8601 timestamp)
 - `stack` — array of detected stack types (e.g., `["python"]`, `["node"]`)
 - `python_version` — detected Python version requirement (e.g., `"3.12.10"`, null if not Python project)
+- `node_version` — detected Node version requirement (e.g., `"20.19.0"`, null if not Node project)
 - `created_at` — ISO 8601 timestamp
 - `updated_at` — ISO 8601 timestamp
 - `last_pull_at` — ISO 8601 timestamp of last update (added by `strap update`)
@@ -943,13 +990,26 @@ strap rename myproject --to my-project --move-folder --dry-run
 
 `strap doctor` diagnoses the strap installation and environment:
 
-- Validates config paths (software_root, tools_root, shims_root, registry_path, strap_root)
-- Checks if shims_root is in PATH
-- Checks availability and versions of required tools (git, pwsh, python, uv, node toolchain, go, rust)
-- Validates registry integrity (JSON validity, required fields, path/shim existence, duplicates)
-- Checks for registry-disk drift (repos in registry but not on disk, or vice versa)
-- Reports status: OK (all good), WARN (non-critical issues), or FAIL (critical issues)
-- Use `--json` for structured output instead of human-readable format
+**Health Checks:**
+- System dependencies (git, pwsh, python, node, go, rust)
+- Shim integrity and target validation
+- Node version management (fnm installation, outdated versions)
+- Python version management (pyenv-win installation, outdated versions)
+- Registry integrity (JSON validity, required fields, path/shim existence, duplicates)
+- Registry-disk drift (repos in registry but not on disk, or vice versa)
+
+**Targeted Checks:**
+- `strap doctor` — Run all health checks
+- `strap doctor --system` — Check system dependencies only
+- `strap doctor --shims` — Check shim health only
+- `strap doctor --node` — Check Node version management (includes outdated warnings)
+- `strap doctor --python` — Check Python version management (includes outdated warnings)
+- `strap doctor --install-fnm` — Install fnm for Node version management
+- `strap doctor --install-pyenv` — Install pyenv-win for Python version management
+- `strap doctor --json` — Output structured JSON instead of human-readable format
+
+**Status Levels:**
+- OK (all good), WARN (non-critical issues), or FAIL (critical issues)
 
 ## Python Version Management
 
@@ -1010,11 +1070,118 @@ pyenv install 3.11.9
 pyenv install --list
 ```
 
+**Upgrading Python versions:**
+
+```powershell
+# Upgrade to latest stable version
+strap upgrade-python my-project --latest
+
+# Upgrade to specific version
+strap upgrade-python my-project --version 3.12.7
+
+# List available upgrades without applying
+strap upgrade-python my-project --list-only
+
+# Upgrade all Python projects to latest
+strap upgrade-python --all --latest
+```
+
 **Technical notes:**
 - pyenv-win ignores `PYENV_ROOT` environment variable (hardcoded in VBScript)
 - Python versions stored in `P:\software\_python-tools\pyenv-win\pyenv-win\versions\`
 - Conservative default: uses `pip` (not `uv`) unless `--use-uv` flag specified
 - Version detection priority: `.python-version` → `pyproject.toml` → `requirements.txt`
+
+## Node Version Management
+
+Strap integrates with fnm (Fast Node Manager) to automatically manage Node versions for your projects. No manual Node installation or nvm conflicts.
+
+**How it works:**
+
+1. **Install fnm** (one-time setup):
+   ```powershell
+   strap doctor --install-fnm
+   ```
+   This vendors fnm to `P:\software\_node-tools\fnm` and creates a system-wide shim.
+
+2. **Node versions are auto-detected** during `strap adopt`, `strap clone`, or `strap setup`:
+   - From `.nvmrc` file (e.g., `20.19.0` or `lts/iron`)
+   - From `.node-version` file (e.g., `20`)
+   - From `package.json` (`engines.node` field)
+
+3. **Major versions resolve automatically**:
+   - `.node-version` contains `20` → strap queries fnm for latest stable 20.x
+   - Full versions like `20.19.0` are used as-is
+   - LTS aliases like `lts/iron` are resolved to specific versions
+
+4. **Installation and validation**:
+   - If version not installed, strap runs `fnm install <version>`
+   - After install, validates by running `node --version`
+   - Creates `.node-version` file in repo if missing
+
+5. **Setup uses correct Node**:
+   - All setup commands (npm, corepack, package manager) use fnm-managed Node
+   - Stored in registry as `node_version` field
+   - Environment isolation prevents conflicts with global nvm or system Node
+
+**Example workflow:**
+
+```powershell
+# Clone a Node project with .nvmrc containing "20"
+strap clone https://github.com/user/node-app
+
+# Output:
+# ✓ Detected Node version requirement: 20
+# ✓ Resolved to latest stable: 20.19.0 (via fnm)
+# ✓ Installing Node 20.19.0 via fnm...
+# ✓ Node 20.19.0 installed and validated
+# ✓ Created .node-version file: 20.19.0
+# ✓ Installed npm dependencies (using fnm Node)
+```
+
+**Corepack integration:**
+
+Strap intelligently enables corepack only when needed:
+- Automatically enabled if `package.json` has a `packageManager` field
+- Uses fnm-managed Node to run corepack (prevents permission errors with nvm)
+- Can be explicitly controlled with `--enable-corepack` or `--no-corepack` flags
+- Environment isolation ensures corepack uses the correct Node version
+
+**Upgrading Node versions:**
+
+```powershell
+# Upgrade to latest stable version
+strap upgrade-node my-project --latest
+
+# Upgrade to specific version
+strap upgrade-node my-project --version 22.11.0
+
+# List available upgrades without applying
+strap upgrade-node my-project --list-only
+
+# Upgrade all Node projects to latest
+strap upgrade-node --all --latest
+```
+
+**Manual usage:**
+
+```powershell
+# List installed Node versions
+fnm list
+
+# Install a specific version
+fnm install 20.19.0
+
+# List all available versions
+fnm list-remote
+```
+
+**Technical notes:**
+- fnm stores Node versions in its own managed directory
+- Environment isolation prepends fnm Node directory to PATH during setup
+- Corepack uses the same Node installation (located in same directory)
+- Version detection priority: `.nvmrc` → `.node-version` → `package.json`
+- Prevents conflicts with global nvm installations
 
 <!--
 ## Snapshot
