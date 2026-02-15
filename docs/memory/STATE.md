@@ -37,7 +37,7 @@ None
 Consolidate/audit/archive commands (disabled since 2026-02-02 incident)
 
 ---
-Last memory update: 2026-02-12
-Commits covered through: 403a1f307138b63b8c93b2d5cf987721ec69c009
+Last memory update: 2026-02-14
+Commits covered through: 6e76969e0c4ced01ff197d68d6484b5d30491107
 
-<!-- chinvex:last-commit:403a1f307138b63b8c93b2d5cf987721ec69c009 -->
+<!-- chinvex:last-commit:6e76969e0c4ced01ff197d68d6484b5d30491107 -->
