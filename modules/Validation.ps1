@@ -382,7 +382,7 @@ function Invoke-Tier3Validation {
     if ($stack -eq "python" -and (Test-Path (Join-Path $RepoEntry.path "pyproject.toml"))) {
         # Extract package name from pyproject.toml
         $pyprojectContent = Get-Content (Join-Path $RepoEntry.path "pyproject.toml") -Raw
-        if ($pyprojectContent -match '\[project\].*?name\s*=\s*["\']([^"\']+)["\']') {
+        if ($pyprojectContent -match '\[project\].*?name\s*=\s*["`'']([^"`'']+)["`'']') {
             $packageName = $matches[1]
             $venvPath = Join-Path $RepoEntry.path ".venv"
 

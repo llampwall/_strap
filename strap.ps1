@@ -65,7 +65,7 @@ param(
   [string] $NewName,
 
   [Alias("v")]
-  [switch] $Verbose,
+  [switch] $VerboseOutput,
 
   [Parameter(ValueFromRemainingArguments=$true)]
   [string[]] $ExtraArgs
@@ -1536,7 +1536,7 @@ if ($RepoName -eq "clone") {
     }
   }
 
-  Invoke-Clone -GitUrl $gitUrl -CustomName $Name -DestPath $Dest -IsTool:$Tool.IsPresent -NoChinvex:$NoChinvex.IsPresent -SkipSetup:$SkipSetup.IsPresent -SkipValidation:$skipValidation -VerboseLogging:$Verbose.IsPresent -StrapRootPath $TemplateRoot
+  Invoke-Clone -GitUrl $gitUrl -CustomName $Name -DestPath $Dest -IsTool:$Tool.IsPresent -NoChinvex:$NoChinvex.IsPresent -SkipSetup:$SkipSetup.IsPresent -SkipValidation:$skipValidation -VerboseLogging:$VerboseOutput.IsPresent -StrapRootPath $TemplateRoot
   exit 0
 }
 
@@ -1630,7 +1630,7 @@ if ($RepoName -eq "rename") {
 }
 
 if ($RepoName -eq "setup") {
-  Invoke-Setup -RepoNameOrPath $Repo -ForceStack $Stack -VenvPath $Venv -UseUv:$Uv.IsPresent -PythonExe $Python -PackageManager $Pm -EnableCorepack:$Corepack.IsPresent -NonInteractive:$Yes.IsPresent -DryRunMode:$DryRun.IsPresent -VerboseLogging:$Verbose.IsPresent -StrapRootPath $TemplateRoot
+  Invoke-Setup -RepoNameOrPath $Repo -ForceStack $Stack -VenvPath $Venv -UseUv:$Uv.IsPresent -PythonExe $Python -PackageManager $Pm -EnableCorepack:$Corepack.IsPresent -NonInteractive:$Yes.IsPresent -DryRunMode:$DryRun.IsPresent -VerboseLogging:$VerboseOutput.IsPresent -StrapRootPath $TemplateRoot
   exit 0
 }
 
