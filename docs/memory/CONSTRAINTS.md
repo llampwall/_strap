@@ -37,6 +37,8 @@
 - Registry automatically backed up before every write with timestamp; pruned to keep 30 most recent (added 2026-02-09)
 - Node versions auto-detected from .nvmrc, .node-version, or package.json engines.node field; stored in registry as node_version (added 2026-02-12)
 - Node installations handled by fnm during setup if version missing (added 2026-02-12)
+- Corepack only enabled when package.json has packageManager field or --enable-corepack explicitly passed (updated 2026-02-14)
+- Corepack commands use fnm-managed Node to prevent permission errors with nvm installations (updated 2026-02-14)
 
 ## Key Facts
 - Shim types: simple (direct exec), venv (Python), node (Node.js PATH setup)
@@ -51,6 +53,7 @@
 - Node version detection order: .nvmrc, .node-version, package.json engines.node (added 2026-02-12)
 - fnm shim location: `P:\software\bin\fnm.{ps1,cmd}` (created by strap doctor --install-fnm) (added 2026-02-12)
 - Doctor check IDs: SHIM001-009, SYS001-004, NODE001-004, PY001-004 (updated 2026-02-12)
+- Setup command environment: fnm Node directory prepended to PATH for all operations (npm/pnpm/yarn/corepack) (added 2026-02-14)
 
 ## Hazards
 - PowerShell unwraps single-element arrays (use comma operator: `,$array`)
@@ -61,6 +64,7 @@
 - PM2 services must be stopped before consolidation moves
 - Chinvex context purge requires stdin confirmation ("y") - use `Invoke-Chinvex -StdIn "y"`
 - PowerShell parameter binding can misinterpret pipeline values as parameters; wrap loops in script blocks (`& { }`) when accessing properties (added 2026-02-12)
+- Global nvm installation can cause permission errors if corepack runs in wrong environment; always use fnm-managed Node for corepack (added 2026-02-14)
 
 ## Superseded
 (None yet)

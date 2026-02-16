@@ -64,6 +64,9 @@ param(
   [switch] $MoveFolder,
   [string] $NewName,
 
+  [Alias("v")]
+  [switch] $Verbose,
+
   [Parameter(ValueFromRemainingArguments=$true)]
   [string[]] $ExtraArgs
 )
@@ -81,6 +84,7 @@ $ModulesPath = Join-Path $PSScriptRoot "modules"
 . (Join-Path $ModulesPath "Chinvex.ps1")
 . (Join-Path $ModulesPath "PyenvIntegration.ps1")
 . (Join-Path $ModulesPath "FnmIntegration.ps1")
+. (Join-Path $ModulesPath "Validation.ps1")
 . (Join-Path $ModulesPath "CLI.ps1")
 . (Join-Path $ModulesPath "References.ps1")
 . (Join-Path $ModulesPath "Audit.ps1")
@@ -1523,7 +1527,16 @@ if ($RepoName -eq "clone") {
       }
     }
   }
-  Invoke-Clone -GitUrl $gitUrl -CustomName $Name -DestPath $Dest -IsTool:$Tool.IsPresent -NoChinvex:$NoChinvex.IsPresent -SkipSetup:$SkipSetup.IsPresent -StrapRootPath $TemplateRoot
+  # Parse --skip-validation flag
+  $skipValidation = $false
+  foreach ($arg in $ExtraArgs) {
+    if ($arg -eq "--skip-validation") {
+      $skipValidation = $true
+      break
+    }
+  }
+
+  Invoke-Clone -GitUrl $gitUrl -CustomName $Name -DestPath $Dest -IsTool:$Tool.IsPresent -NoChinvex:$NoChinvex.IsPresent -SkipSetup:$SkipSetup.IsPresent -SkipValidation:$skipValidation -VerboseLogging:$Verbose.IsPresent -StrapRootPath $TemplateRoot
   exit 0
 }
 
@@ -1617,7 +1630,31 @@ if ($RepoName -eq "rename") {
 }
 
 if ($RepoName -eq "setup") {
-  Invoke-Setup -RepoNameOrPath $Repo -ForceStack $Stack -VenvPath $Venv -UseUv:$Uv.IsPresent -PythonExe $Python -PackageManager $Pm -EnableCorepack:$Corepack.IsPresent -NonInteractive:$Yes.IsPresent -DryRunMode:$DryRun.IsPresent -StrapRootPath $TemplateRoot
+  Invoke-Setup -RepoNameOrPath $Repo -ForceStack $Stack -VenvPath $Venv -UseUv:$Uv.IsPresent -PythonExe $Python -PackageManager $Pm -EnableCorepack:$Corepack.IsPresent -NonInteractive:$Yes.IsPresent -DryRunMode:$DryRun.IsPresent -VerboseLogging:$Verbose.IsPresent -StrapRootPath $TemplateRoot
+  exit 0
+}
+
+if ($RepoName -eq "verify") {
+  # Parse flags from ExtraArgs
+  $tier1Only = $false
+  $tier2Only = $false
+  $deepDiagnostics = $false
+  $repoToVerify = $null
+  $timeoutSeconds = 5
+
+  foreach ($arg in $ExtraArgs) {
+    if ($arg -eq "--tier1") { $tier1Only = $true }
+    elseif ($arg -eq "--tier2") { $tier2Only = $true }
+    elseif ($arg -eq "--deep") { $deepDiagnostics = $true }
+    elseif ($arg -match '^--timeout=(\d+)$') { $timeoutSeconds = [int]$matches[1] }
+    elseif (-not $arg.StartsWith("--")) { $repoToVerify = $arg }
+  }
+
+  if (-not $repoToVerify) {
+    Die "Usage: strap verify <name> [--tier1|--tier2|--deep] [--timeout=N]"
+  }
+
+  Invoke-Verify -RepoName $repoToVerify -Tier1Only:$tier1Only -Tier2Only:$tier2Only -DeepDiagnostics:$deepDiagnostics -TimeoutSeconds $timeoutSeconds -Json:$Json.IsPresent -StrapRootPath $TemplateRoot
   exit 0
 }
 

@@ -30,6 +30,12 @@ strap doctor --python             # Check Python version management (includes ou
 strap doctor --install-fnm        # Install fnm (Fast Node Manager) for Node version management
 strap doctor --install-pyenv      # Install pyenv-win for Python version management
 
+strap verify <name>               # Validate shims work correctly (Tier 1+2)
+strap verify <name> --tier1       # Filesystem checks only (fast, <100ms)
+strap verify <name> --tier2       # Invocation checks only
+strap verify <name> --deep        # Full diagnostics including Tier 3 (slow)
+strap verify <name> --timeout=N   # Custom timeout for invocation tests (default: 5s)
+
 ### Version Upgrades
 strap upgrade-node <name>         # Upgrade Node version for a project
 strap upgrade-node <name> --latest              # Upgrade to latest stable version
@@ -45,8 +51,11 @@ strap upgrade-python --all --latest             # Upgrade all Python projects to
 
 ### Lifecycle Management
 strap clone <url>                 # Clone repo and auto-create shims
+strap clone <url> --verbose       # Clone with detailed diagnostic output
+strap clone <url> --skip-validation  # Skip automatic shim validation after clone
 strap adopt                       # Register existing repo with auto-shim discovery
 strap setup --repo <name>         # Install dependencies (auto-detects Python/Node/Go/Rust)
+strap setup --repo <name> --verbose  # Setup with detailed diagnostic output
 strap list --verbose              # Show all managed repos with full details
 strap update --all --yes          # Update all repos at once
 strap move <name> --dest <path>   # Relocate repo and update registry

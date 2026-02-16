@@ -4,6 +4,8 @@
 # Decisions
 
 ## Recent (last 30 days)
+- Documented fnm integration, corepack fixes, and upgrade commands in README (f05650b)
+- Fixed corepack permission errors with smart detection and fnm environment isolation (424de1f)
 - Added upgrade-node and upgrade-python commands for easy version management (55ab13e, 11a0a10)
 - Implemented --all flag for batch upgrades of all projects of a type (c1858a6)
 - Added doctor health checks (NODE004, PY004) with version outdated warnings (11189fe)
@@ -12,10 +14,23 @@
 - Implemented automatic Python version detection, download, and installation (a910b75)
 - Vendored PM2 and created system-wide shim to ensure availability (50fda24)
 - Added configure command for post-ingestion metadata updates (1b551bc)
-- Added setup status tracking with health visibility (09af3e0)
-- Enabled full chinvex ingestion during adopt/clone (16cac94)
 
 ## 2026-02
+
+### 2026-02-14 — Comprehensive README documentation update
+
+- **Why:** Recent features (fnm integration, upgrade commands, corepack fixes) lacked documentation; users needed clear guidance on version management workflows
+- **Impact:** Added Node Version Management section (mirroring Python docs); documented upgrade-node/upgrade-python commands with all flags (--latest/--version/--list-only/--all); documented doctor targeted checks (--system/--shims/--node/--python) and installer flags (--install-fnm/--install-pyenv); clarified corepack smart detection (auto-enabled when packageManager field present); documented registry schema node_version field; updated setup flags (--enable-corepack/--no-corepack); 187 lines added to README
+- **Evidence:** f05650b
+- **Key Design:** Documentation follows same structure as Python section for consistency; examples show complete workflows
+
+### 2026-02-14 — Fixed corepack permission errors with fnm/nvm conflicts
+
+- **Symptom:** `corepack enable` failing with permission denied when writing to nvm directory (C:\Users\...\nvm\v22.15.1\)
+- **Root cause:** strap uses fnm per-project; users may have nvm globally; corepack running in global environment tried writing to nvm directory
+- **Fix:** (1) Smart detection - only enable corepack when package.json has packageManager field OR --enable-corepack explicitly passed; (2) Resolve corepack.cmd from fnm Node directory; (3) Environment isolation - prepend fnm Node directory to PATH for all setup commands (npm/pnpm/yarn/corepack)
+- **Prevention:** Always use fnm-managed Node for version-specific operations; avoid global environment when version management tools present; validate corepack need before enabling
+- **Evidence:** 424de1f; tested with fnm/nvm conflict scenario; added Setup.NodeCorepack.Tests.ps1 with packageManager detection and environment isolation tests; documented in FNM_INTEGRATION.md Corepack Integration section
 
 ### 2026-02-12 — Doctor version outdated warnings (NODE004, PY004)
 

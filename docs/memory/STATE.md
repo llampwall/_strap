@@ -9,14 +9,6 @@ Stable operations - all major features implemented and working
 ## Active Work
 None (maintenance mode)
 
-## Recent Completions (Feb 12, 2026)
-- Version upgrade commands (upgrade-node, upgrade-python) with --latest/--version/--list-only flags
-- Batch upgrade with --all flag (upgrade all Node or Python projects at once)
-- Doctor health checks with version outdated warnings (NODE004, PY004)
-- fnm integration for Node version management (mirrors pyenv-win pattern)
-- Comprehensive test suite (19 fnm tests), documentation (FNM_INTEGRATION.md, CLAUDE.md)
-- Migrated all 5 Node projects to fnm (node_version tracked in registry)
-
 ## Blockers
 None
 
@@ -37,7 +29,7 @@ None
 Consolidate/audit/archive commands (disabled since 2026-02-02 incident)
 
 ---
-Last memory update: 2026-02-14
-Commits covered through: 6e76969e0c4ced01ff197d68d6484b5d30491107
+Last memory update: 2026-02-16
+Commits covered through: d73e462ffc1c93c5ea0ff2d8004da9e3089e8b6a
 
-<!-- chinvex:last-commit:6e76969e0c4ced01ff197d68d6484b5d30491107 -->
+<!-- chinvex:last-commit:d73e462ffc1c93c5ea0ff2d8004da9e3089e8b6a -->

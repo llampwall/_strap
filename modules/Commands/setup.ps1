@@ -12,12 +12,26 @@ function Invoke-Setup {
     [switch] $EnableCorepack,
     [switch] $NonInteractive,
     [switch] $DryRunMode,
+    [switch] $VerboseLogging,
     [string] $StrapRootPath
   )
 
+  # Enable verbose output if requested
+  $script:VerboseSetup = $VerboseLogging
+
+  function Verbose-Log {
+    param([string]$Message)
+    if ($script:VerboseSetup) {
+      Write-Host "  [VERBOSE] $Message" -ForegroundColor DarkGray
+    }
+  }
+
   # Load config and registry
+  Verbose-Log "Loading config and registry..."
   $config = Load-Config $StrapRootPath
   $registry = Load-Registry $config
+  Verbose-Log "Config loaded from: $($config.strap_root)\config.json"
+  Verbose-Log "Registry loaded with $($registry.Count) entries"
 
   # Determine repo path
   $repoPath = $null
@@ -58,19 +72,38 @@ function Invoke-Setup {
 
   try {
     # Stack detection
+    Verbose-Log "Scanning for stack markers in $resolvedPath..."
     $detectedStacks = @()
 
-    if (Test-Path "pyproject.toml") { $detectedStacks += "python" }
-    elseif (Test-Path "requirements.txt") { $detectedStacks += "python" }
+    if (Test-Path "pyproject.toml") {
+      $detectedStacks += "python"
+      Verbose-Log "Found pyproject.toml - Python stack detected"
+    }
+    elseif (Test-Path "requirements.txt") {
+      $detectedStacks += "python"
+      Verbose-Log "Found requirements.txt - Python stack detected"
+    }
 
-    if (Test-Path "package.json") { $detectedStacks += "node" }
-    if (Test-Path "Cargo.toml") { $detectedStacks += "rust" }
-    if (Test-Path "go.mod") { $detectedStacks += "go" }
+    if (Test-Path "package.json") {
+      $detectedStacks += "node"
+      Verbose-Log "Found package.json - Node stack detected"
+    }
+    if (Test-Path "Cargo.toml") {
+      $detectedStacks += "rust"
+      Verbose-Log "Found Cargo.toml - Rust stack detected"
+    }
+    if (Test-Path "go.mod") {
+      $detectedStacks += "go"
+      Verbose-Log "Found go.mod - Go stack detected"
+    }
 
     $dockerDetected = $false
     if ((Test-Path "Dockerfile") -or (Test-Path "compose.yaml") -or (Test-Path "docker-compose.yml")) {
       $dockerDetected = $true
+      Verbose-Log "Docker files detected"
     }
+
+    Verbose-Log "Stack detection complete: $($detectedStacks -join ', ')"
 
     # Determine stack to use
     $stack = $null
@@ -107,17 +140,23 @@ function Invoke-Setup {
 
     if ($stack -eq "node") {
       # Detect required Node version
+      Verbose-Log "Detecting Node version requirement..."
       $detectedNodeVersion = Get-NodeVersionFromFile -RepoPath $resolvedPath
 
       if ($detectedNodeVersion) {
         Info "Detected Node version requirement: $detectedNodeVersion"
+        Verbose-Log "Checking if fnm is installed..."
 
         # Check if fnm is installed
         if (Test-FnmInstalled) {
+          Verbose-Log "fnm is installed"
           # Check if this version is already installed
+          Verbose-Log "Checking installed Node versions..."
           $installedVersions = Get-FnmVersions
+          Verbose-Log "Installed versions: $($installedVersions -join ', ')"
           if ($installedVersions -notcontains $detectedNodeVersion) {
             Write-Host "  Installing Node $detectedNodeVersion via fnm..." -ForegroundColor Cyan
+            Verbose-Log "Running: fnm install $detectedNodeVersion"
             $installSuccess = Install-FnmVersion -Version $detectedNodeVersion
 
             if (-not $installSuccess) {
@@ -151,17 +190,23 @@ function Invoke-Setup {
 
     if ($stack -eq "python") {
       # Detect required Python version
+      Verbose-Log "Detecting Python version requirement..."
       $detectedPythonVersion = Get-PythonVersionFromFile -RepoPath $resolvedPath
 
       if ($detectedPythonVersion) {
         Info "Detected Python version requirement: $detectedPythonVersion"
+        Verbose-Log "Checking if pyenv-win is installed..."
 
         # Check if pyenv is installed
         if (Test-PyenvInstalled) {
+          Verbose-Log "pyenv-win is installed"
           # Check if this version is already installed
+          Verbose-Log "Checking installed Python versions..."
           $installedVersions = Get-PyenvVersions
+          Verbose-Log "Installed versions: $($installedVersions -join ', ')"
           if ($installedVersions -notcontains $detectedPythonVersion) {
             Write-Host "  Installing Python $detectedPythonVersion via pyenv..." -ForegroundColor Cyan
+            Verbose-Log "Running: pyenv install $detectedPythonVersion"
             $installSuccess = Install-PyenvVersion -Version $detectedPythonVersion
 
             if (-not $installSuccess) {
@@ -416,24 +461,37 @@ function Invoke-Setup {
     foreach ($step in $plan) {
       Info $step.Description
       Write-Host "  > $($step.Command)" -ForegroundColor Gray
+      Verbose-Log "Executing setup step: $($step.Description)"
 
       # Execute command using pwsh to avoid Invoke-Expression issues
       # This properly handles quoted paths and special characters
       # For Node projects with fnm, prepend the fnm Node directory to PATH
       $cmdWithEnv = if ($nodeEnvSetup) {
+        Verbose-Log "Prepending fnm Node to PATH: $nodeEnvSetup"
         $nodeEnvSetup + $step.Command
       } else {
         $step.Command
       }
 
+      Verbose-Log "Full command: pwsh -NoProfile -Command `"$cmdWithEnv`""
       $output = pwsh -NoProfile -Command $cmdWithEnv 2>&1
+
+      if ($script:VerboseSetup) {
+        Write-Host "  [VERBOSE] Command output:" -ForegroundColor DarkGray
+        Write-Host $output -ForegroundColor DarkGray
+      }
+
       if ($LASTEXITCODE -ne 0) {
         Write-Host ""
         Write-Host "ERROR: Command failed with exit code $LASTEXITCODE" -ForegroundColor Red
+        Write-Host "Command: $($step.Command)" -ForegroundColor Yellow
+        Write-Host "Output:" -ForegroundColor Yellow
         Write-Host $output
         Pop-Location
-        Die "Setup failed"
+        Die "Setup failed at step: $($step.Description)"
       }
+
+      Verbose-Log "Step completed successfully (exit code: $LASTEXITCODE)"
     }
 
     Write-Host ""

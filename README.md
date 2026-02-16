@@ -126,6 +126,14 @@ strap shim custom-alias --cmd "python -m chinvex.special" --repo chinvex
 
 # Diagnose issues
 strap doctor
+
+# Verify shims work correctly
+strap verify chinvex
+strap verify chinvex --deep  # include deep diagnostics
+
+# Verbose logging for debugging
+strap clone https://github.com/llampwall/chinvex --verbose
+strap setup --repo chinvex --verbose
 ```
 
 **What just happened?**
@@ -162,6 +170,112 @@ The following commands are currently **disabled** due to safety concerns from th
 
 These commands will return a warning message referencing `docs/incidents/2026-02-02-environment-corruption.md`. They are pending review and safety improvements before being re-enabled.
 
+## Shim Validation
+
+After `strap clone` or `strap setup`, shims are automatically validated to ensure they work correctly. You can also run validation manually:
+
+```powershell
+# Validate all shims for a repo
+strap verify <name>
+
+# Tier 1 only (filesystem checks, <100ms)
+strap verify <name> --tier1
+
+# Tier 2 only (invocation checks)
+strap verify <name> --tier2
+
+# Full diagnostics (includes deep checks - slow)
+strap verify <name> --deep
+
+# Custom timeout for invocation tests (default: 5s)
+strap verify <name> --timeout=10
+```
+
+**Validation Tiers:**
+
+1. **Tier 1 - Filesystem Checks** (always safe, <100ms):
+   - Shim files exist (`.ps1` and `.cmd`)
+   - Target executable exists
+   - Venv directory exists (for Python shims)
+   - `node_modules` exists (for Node shims)
+
+2. **Tier 2 - Conservative Invocation** (default, skippable):
+   - Tries running each shim with `--version` or `--help`
+   - Any zero exit code = success
+   - 5 second timeout per shim
+   - Skipped automatically if Tier 1 fails
+
+3. **Tier 3 - Deep Diagnostics** (manual only, slow):
+   - Python: Can the venv import its own package?
+   - Go: Does `go build` succeed?
+   - Other stack-specific checks
+
+**Automatic Validation:**
+
+- Runs Tier 1 + 2 automatically after `strap clone`
+- Skip with `--skip-validation` flag
+- Failed validation doesn't block clone, just warns
+
+**Example Output:**
+
+```powershell
+PS> strap verify chinvex
+Verifying: chinvex
+Path: P:\software\chinvex
+Stack: python
+
+Running validation tiers:
+  - Tier 1: Filesystem checks (fast, always safe)
+  - Tier 2: Conservative invocation (--version/--help)
+
+  ✓ chinvex
+  ✓ chinvex-mcp
+
+=== SUMMARY ===
+Total shims: 2
+Passed: 2
+```
+
+## Verbose Logging
+
+Add `--verbose` (or `-v`) to `strap clone` or `strap setup` for detailed diagnostic output:
+
+```powershell
+strap clone https://github.com/user/repo --verbose
+strap setup --repo myrepo --verbose
+```
+
+**What you'll see:**
+- Config and registry loading
+- Stack detection (which files found)
+- Version detection (Python/Node versions)
+- fnm/pyenv availability checks
+- Installed versions lookup
+- Each setup command before execution
+- Full command output (not suppressed)
+- Shim auto-discovery results
+- Registry saves
+
+**Example:**
+
+```
+[VERBOSE] Loading config and registry...
+[VERBOSE] Config loaded from: P:\software\_strap\config.json
+[VERBOSE] Registry loaded with 42 entries
+[VERBOSE] Detecting stack type...
+[VERBOSE] Found pyproject.toml - Python stack
+[VERBOSE] Detecting Python version requirement...
+[VERBOSE] Python version detected: 3.12.1
+[VERBOSE] Checking if pyenv-win is installed...
+[VERBOSE] pyenv-win is installed
+[VERBOSE] Checking installed Python versions...
+[VERBOSE] Installed versions: 3.11.0, 3.12.1, 3.13.0
+[VERBOSE] Executing setup step: Create Python virtual environment
+[VERBOSE] Full command: pwsh -NoProfile -Command "python -m venv .venv"
+[VERBOSE] Command output: [actual output shown]
+[VERBOSE] Step completed successfully (exit code: 0)
+```
+
 ## Usage
 
 ### Template Bootstrapping
@@ -197,6 +311,7 @@ strap shim <name> --cmd "<command>" [--cwd <path>] [--repo <name>] [--force] [--
 strap uninstall <name> [--yes]
 strap purge [--cleanup-chinvex] [--yes] [--dry-run]
 strap doctor [--system] [--shims] [--node] [--python] [--install-fnm] [--install-pyenv] [--json]
+strap verify <name> [--tier1|--tier2|--deep] [--timeout=N] [--json]
 # strap migrate [--yes] [--dry-run] [--backup] [--json] [--to <version>] [--plan]
 # strap snapshot [--output <path>] [--scan <dir>...]
 # strap audit <name|--all> [--json] [--rebuild-index]

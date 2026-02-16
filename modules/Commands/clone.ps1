@@ -9,8 +9,20 @@ function Invoke-Clone {
     [switch] $IsTool,
     [switch] $NoChinvex,
     [switch] $SkipSetup,
+    [switch] $SkipValidation,
+    [switch] $VerboseLogging,
     [string] $StrapRootPath
   )
+
+  # Enable verbose output if requested
+  $script:VerboseClone = $VerboseLogging
+
+  function Verbose-Log {
+    param([string]$Message)
+    if ($script:VerboseClone) {
+      Write-Host "  [VERBOSE] $Message" -ForegroundColor DarkGray
+    }
+  }
 
   Ensure-Command git
 
@@ -73,27 +85,62 @@ function Invoke-Clone {
   }
 
   # Detect stack (best-effort)
+  Verbose-Log "Detecting stack type..."
   $stackDetected = $null
   $pythonVersion = $null
+  $nodeVersion = $null
 
   Push-Location $absolutePath
   try {
-    if (Test-Path "pyproject.toml") { $stackDetected = "python" }
-    elseif (Test-Path "requirements.txt") { $stackDetected = "python" }
-    elseif (Test-Path "package.json") { $stackDetected = "node" }
-    elseif (Test-Path "Cargo.toml") { $stackDetected = "rust" }
-    elseif (Test-Path "go.mod") { $stackDetected = "go" }
+    if (Test-Path "pyproject.toml") {
+      $stackDetected = "python"
+      Verbose-Log "Found pyproject.toml - Python stack"
+    }
+    elseif (Test-Path "requirements.txt") {
+      $stackDetected = "python"
+      Verbose-Log "Found requirements.txt - Python stack"
+    }
+    elseif (Test-Path "package.json") {
+      $stackDetected = "node"
+      Verbose-Log "Found package.json - Node stack"
+    }
+    elseif (Test-Path "Cargo.toml") {
+      $stackDetected = "rust"
+      Verbose-Log "Found Cargo.toml - Rust stack"
+    }
+    elseif (Test-Path "go.mod") {
+      $stackDetected = "go"
+      Verbose-Log "Found go.mod - Go stack"
+    }
 
     # Detect Python version if Python stack
     if ($stackDetected -eq "python") {
+      Verbose-Log "Detecting Python version requirement..."
       $pythonVersion = Get-PythonVersionFromFile -RepoPath $absolutePath
       if ($pythonVersion) {
         Info "Detected Python version: $pythonVersion"
+        Verbose-Log "Python version detected: $pythonVersion"
+      } else {
+        Verbose-Log "No Python version requirement found"
+      }
+    }
+
+    # Detect Node version if Node stack
+    if ($stackDetected -eq "node") {
+      Verbose-Log "Detecting Node version requirement..."
+      $nodeVersion = Get-NodeVersionFromFile -RepoPath $absolutePath
+      if ($nodeVersion) {
+        Info "Detected Node version: $nodeVersion"
+        Verbose-Log "Node version detected: $nodeVersion"
+      } else {
+        Verbose-Log "No Node version requirement found"
       }
     }
   } finally {
     Pop-Location
   }
+
+  Verbose-Log "Stack detection complete: $($stackDetected ? $stackDetected : 'none')"
 
   # Create new entry with V3 metadata fields
   $timestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
@@ -109,9 +156,16 @@ function Invoke-Clone {
     shims           = @()
     stack           = if ($stackDetected) { $stackDetected } else { @() }
     python_version  = $pythonVersion
+    node_version    = $nodeVersion
     created_at      = $timestamp
     updated_at      = $timestamp
   }
+
+  Verbose-Log "Created registry entry: $repoName"
+  Verbose-Log "  Path: $absolutePath"
+  Verbose-Log "  Stack: $($stackDetected ? $stackDetected : 'none')"
+  if ($pythonVersion) { Verbose-Log "  Python version: $pythonVersion" }
+  if ($nodeVersion) { Verbose-Log "  Node version: $nodeVersion" }
 
   # Add to registry
   $newRegistry = @()
@@ -147,13 +201,21 @@ function Invoke-Clone {
   if (-not $SkipSetup -and $stackDetected) {
     Write-Host ""
     Info "Running automatic setup for $stackDetected stack..."
+    Verbose-Log "Invoking setup with NonInteractive mode..."
     Push-Location $absolutePath
     try {
-      Invoke-Setup -StrapRootPath $StrapRootPath -NonInteractive
+      # Pass verbose flag to setup
+      if ($script:VerboseClone) {
+        Invoke-Setup -StrapRootPath $StrapRootPath -NonInteractive -VerboseLogging
+      } else {
+        Invoke-Setup -StrapRootPath $StrapRootPath -NonInteractive
+      }
       $setupSucceeded = $true
+      Verbose-Log "Setup completed successfully"
     } catch {
       $setupError = $_.Exception.Message
       Warn "Setup failed: $_"
+      Verbose-Log "Setup error: $setupError"
       Warn "You can run 'strap setup --repo $repoName' manually"
     } finally {
       Pop-Location
@@ -182,8 +244,13 @@ function Invoke-Clone {
   }
 
   # Auto-discover and create shims
+  Verbose-Log "Running auto-discovery for shims..."
   $autoShims = Invoke-ShimAutoDiscover -RepoEntry $entry -Config $config -Registry $newRegistry
+  Verbose-Log "Auto-discovery found $($autoShims.Count) shim(s)"
   if ($autoShims.Count -gt 0) {
+    foreach ($shim in $autoShims) {
+      Verbose-Log "  - $($shim.name) ($($shim.type)): $($shim.exe)"
+    }
     # Update entry with created shims
     $entry.shims = $autoShims
     # Re-save registry with shims
@@ -194,10 +261,32 @@ function Invoke-Clone {
       }
       $finalRegistry += $item
     }
+    Verbose-Log "Saving registry with updated shims..."
     Save-Registry $config $finalRegistry
+  } else {
+    Verbose-Log "No shims auto-discovered"
   }
 
   Ok "Added to registry"
+
+  # Validate shims (Tier 1 + 2) unless skipped
+  if (-not $SkipValidation -and $autoShims.Count -gt 0) {
+    Write-Host ""
+    Write-Host "Validating shims..." -ForegroundColor Cyan
+    Verbose-Log "Running Tier 1+2 validation on $($autoShims.Count) shim(s)..."
+
+    $validationSummary = Invoke-RepoValidation -RepoEntry $entry -Config $config -Tiers @(1, 2) -TimeoutSeconds 5 -Quiet:$false
+
+    if ($validationSummary.failedCount -gt 0) {
+      Write-Host ""
+      Write-Host "⚠ $($validationSummary.failedCount) shim(s) failed validation" -ForegroundColor Yellow
+      Write-Host "Run 'strap verify $repoName' for detailed diagnostics" -ForegroundColor Yellow
+    } else {
+      Verbose-Log "All shims validated successfully"
+    }
+  } elseif ($SkipValidation) {
+    Verbose-Log "Validation skipped (--skip-validation)"
+  }
 
   if (-not $SkipSetup -and $stackDetected -and $autoShims.Count -gt 0) {
     Write-Host ""
