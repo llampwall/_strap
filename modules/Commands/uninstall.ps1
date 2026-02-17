@@ -49,33 +49,48 @@ function Invoke-Uninstall {
   }
 
   # Validate shim paths
+  # $entry.shims is an array of shim objects with properties (name, exe, ps1Path, type, etc.)
+  # Extract the actual .ps1 and .cmd file paths from each shim object
   $shimsToDelete = @()
   if (-not $PreserveShims -and $entry.shims) {
-    foreach ($shim in $entry.shims) {
-      # Must be absolute
-      if (-not [System.IO.Path]::IsPathRooted($shim)) {
-        Die "Shim path is not absolute: $shim"
-      }
+    $shimObjects = @($entry.shims)  # Ensure array (PowerShell unwraps single-element arrays)
+    foreach ($shim in $shimObjects) {
+      # Extract ps1 path from shim object
+      $ps1Path = if ($shim -is [string]) { $shim } else { $shim.ps1Path }
 
-      # Must be within shims root
-      if (-not $shim.StartsWith($shimsRoot, [StringComparison]::OrdinalIgnoreCase)) {
-        Die "Shim path is not within shims root: $shim"
-      }
+      if (-not $ps1Path) { continue }  # Skip shims with no path
 
-      # Must not be the root directory itself
-      if ($shim -eq $shimsRoot) {
-        Die "Cannot delete shims root directory: $shim"
-      }
+      # Derive .cmd path from .ps1 path
+      $cmdPath = [System.IO.Path]::ChangeExtension($ps1Path, '.cmd')
 
-      # Must be a file path (ends with .cmd, .ps1, etc., not a directory)
-      if (Test-Path $shim) {
-        $item = Get-Item -LiteralPath $shim
-        if ($item.PSIsContainer) {
-          Die "Shim path is a directory, not a file: $shim"
+      foreach ($shimFile in @($ps1Path, $cmdPath)) {
+        if (-not $shimFile) { continue }
+
+        # Must be absolute
+        if (-not [System.IO.Path]::IsPathRooted($shimFile)) {
+          Die "Shim path is not absolute: $shimFile"
         }
-      }
 
-      $shimsToDelete += $shim
+        # Must be within shims root
+        if (-not $shimFile.StartsWith($shimsRoot, [StringComparison]::OrdinalIgnoreCase)) {
+          Die "Shim path is not within shims root: $shimFile"
+        }
+
+        # Must not be the root directory itself
+        if ($shimFile -eq $shimsRoot) {
+          Die "Cannot delete shims root directory: $shimFile"
+        }
+
+        # Must be a file path (not a directory)
+        if (Test-Path $shimFile) {
+          $item = Get-Item -LiteralPath $shimFile
+          if ($item.PSIsContainer) {
+            Die "Shim path is a directory, not a file: $shimFile"
+          }
+        }
+
+        $shimsToDelete += $shimFile
+      }
     }
   }
 
@@ -97,8 +112,9 @@ function Invoke-Uninstall {
   } elseif ($PreserveShims -and $entry.shims -and $entry.shims.Count -gt 0) {
     Write-Host ""
     Write-Host "Will keep shims (--keep-shims):" -ForegroundColor Green
-    foreach ($shim in $entry.shims) {
-      Write-Host "  - $shim"
+    foreach ($shim in @($entry.shims)) {
+      $shimName = if ($shim -is [string]) { $shim } else { $shim.name }
+      Write-Host "  - $shimName"
     }
   }
 
