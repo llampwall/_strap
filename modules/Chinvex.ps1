@@ -213,8 +213,10 @@ function Sync-ChinvexForEntry {
         return $null
     }
 
-    # Step 2: Ingest repo with metadata
-    $baseArgs = @(
+    # Step 2: Ingest repo in the background - large repos can take minutes to
+    # index and we don't want clone to block. The context name is returned
+    # immediately so the registry is populated and uninstall can clean it up.
+    $ingestArgs = @(
         "ingest", "--context", $contextName,
         "--repo", $RepoPath,
         "--chinvex-depth", $ChinvexDepth,
@@ -223,26 +225,19 @@ function Sync-ChinvexForEntry {
 
     # Add tags if present
     if ($Tags.Count -gt 0) {
-        $baseArgs += "--tags"
-        $baseArgs += ($Tags -join ",")
+        $ingestArgs += "--tags"
+        $ingestArgs += ($Tags -join ",")
     }
 
     # Add --rebuild-index if requested (forces full reingest when depth changes)
     if ($RebuildIndex) {
-        $baseArgs += "--rebuild-index"
+        $ingestArgs += "--rebuild-index"
     }
 
-    # Ingest with a 120s timeout - large repos can take a long time to index
-    # and we don't want clone to block indefinitely. If it times out, the
-    # context exists but is unindexed; user can re-sync manually.
-    $ingested = Invoke-Chinvex -Arguments $baseArgs -TimeoutSeconds 120
-    if (-not $ingested) {
-        Warn "Chinvex ingest timed out or failed for '$contextName' (continuing without index)"
-        Warn "Re-run: chinvex ingest --context $contextName --repo $RepoPath --chinvex-depth $ChinvexDepth --status $Status"
-        return $null
-    }
+    $ingestCmd = "chinvex " + ($ingestArgs -join " ")
+    Start-Process pwsh -ArgumentList "-NoProfile", "-WindowStyle", "Hidden", "-Command", $ingestCmd -NoNewWindow:$false
 
     $tagsDisplay = if ($Tags.Count -gt 0) { ", tags=$($Tags -join ',')" } else { "" }
-    Info "Synced to chinvex context: $contextName (depth=$ChinvexDepth, status=$Status$tagsDisplay)"
+    Info "Synced to chinvex context: $contextName (indexing in background...)"
     return $contextName
 }
