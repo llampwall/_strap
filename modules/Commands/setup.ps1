@@ -124,11 +124,16 @@ function Invoke-Setup {
         Die "No recognized stack detected. Use --stack to force selection."
       }
     } elseif ($detectedStacks.Count -gt 1) {
-      Write-Host ""
-      Write-Host "Multiple stacks detected: $($detectedStacks -join ', ')" -ForegroundColor Yellow
-      Write-Host "Use --stack <stack> to select one" -ForegroundColor Yellow
-      Pop-Location
-      Die "Setup failed"
+      # Pick primary stack by priority: python > node > rust > go
+      $stackPriority = @('python', 'node', 'rust', 'go')
+      foreach ($p in $stackPriority) {
+        if ($detectedStacks -contains $p) {
+          $stack = $p
+          break
+        }
+      }
+      if (-not $stack) { $stack = $detectedStacks[0] }
+      Warn "Multiple stacks detected ($($detectedStacks -join ', ')). Using '$stack'. Run with --stack to override."
     } else {
       $stack = $detectedStacks[0]
       Info "Detected stack: $stack"

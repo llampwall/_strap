@@ -92,29 +92,35 @@ function Invoke-Clone {
 
   Push-Location $absolutePath
   try {
-    if (Test-Path "pyproject.toml") {
-      $stackDetected = "python"
-      Verbose-Log "Found pyproject.toml - Python stack"
+    $allStacks = @()
+    if ((Test-Path "pyproject.toml") -or (Test-Path "requirements.txt") -or (Test-Path "setup.py")) {
+      $allStacks += "python"
+      Verbose-Log "Found Python marker - python stack"
     }
-    elseif (Test-Path "requirements.txt") {
-      $stackDetected = "python"
-      Verbose-Log "Found requirements.txt - Python stack"
+    if (Test-Path "package.json") {
+      $allStacks += "node"
+      Verbose-Log "Found package.json - node stack"
     }
-    elseif (Test-Path "setup.py") {
-      $stackDetected = "python"
-      Verbose-Log "Found setup.py - Python stack"
+    if (Test-Path "Cargo.toml") {
+      $allStacks += "rust"
+      Verbose-Log "Found Cargo.toml - rust stack"
     }
-    elseif (Test-Path "package.json") {
-      $stackDetected = "node"
-      Verbose-Log "Found package.json - Node stack"
+    if (Test-Path "go.mod") {
+      $allStacks += "go"
+      Verbose-Log "Found go.mod - go stack"
     }
-    elseif (Test-Path "Cargo.toml") {
-      $stackDetected = "rust"
-      Verbose-Log "Found Cargo.toml - Rust stack"
+
+    # Pick primary stack by priority: python > node > rust > go
+    $stackPriority = @('python', 'node', 'rust', 'go')
+    foreach ($p in $stackPriority) {
+      if ($allStacks -contains $p) {
+        $stackDetected = $p
+        break
+      }
     }
-    elseif (Test-Path "go.mod") {
-      $stackDetected = "go"
-      Verbose-Log "Found go.mod - Go stack"
+
+    if ($allStacks.Count -gt 1) {
+      Warn "Multiple stacks detected ($($allStacks -join ', ')). Using '$stackDetected'. Run 'strap setup --repo $repoName --stack <stack>' to use a different one."
     }
 
     # Detect Python version if Python stack
