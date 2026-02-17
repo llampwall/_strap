@@ -503,6 +503,13 @@ function Invoke-Setup {
         Write-Host "Command: $($step.Command)" -ForegroundColor Yellow
         Write-Host "Output:" -ForegroundColor Yellow
         Write-Host $output
+        # Detect Windows symlink permission error (preconstruct, pnpm, etc.)
+        if ($output -match "EPERM.*symlink") {
+          Write-Host ""
+          Write-Host "HINT: Symlink creation failed - this is a Windows permission restriction." -ForegroundColor Cyan
+          Write-Host "      Enable Developer Mode to allow symlinks without admin rights:" -ForegroundColor Cyan
+          Write-Host "      Settings > System > For Developers > Developer Mode = On" -ForegroundColor Cyan
+        }
         Pop-Location
         Die "Setup failed at step: $($step.Description)"
       }
