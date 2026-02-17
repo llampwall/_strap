@@ -629,7 +629,33 @@ function Discover-PythonShims {
         }
     }
 
-    # Try setup.py if no pyproject.toml or no scripts found
+    # Try setup.cfg [options.entry_points] console_scripts if no scripts found yet
+    if ($shims.Count -eq 0) {
+        $setupCfgPath = Join-Path $RepoPath "setup.cfg"
+        if (Test-Path $setupCfgPath) {
+            $content = Get-Content -LiteralPath $setupCfgPath -Raw
+
+            # Parse console_scripts = \n    name = module:func (indented lines)
+            if ($content -match '(?ms)console_scripts\s*=\s*\n((?:[ \t]+[^\n]+\n?)*)') {
+                $scriptsBlock = $matches[1]
+                $scriptsBlock -split "`n" | ForEach-Object {
+                    $line = $_.Trim()
+                    if ($line -and $line -match '^([a-zA-Z0-9_-]+)\s*=') {
+                        $shimName = $matches[1]
+                        if (-not ($shims | Where-Object { $_.name -eq $shimName })) {
+                            $shims += @{
+                                name = $shimName
+                                type = "venv"
+                                exe  = $shimName
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    # Try setup.py if still no scripts found
     if ($shims.Count -eq 0) {
         $setupPath = Join-Path $RepoPath "setup.py"
         if (Test-Path $setupPath) {
