@@ -191,10 +191,10 @@ function Invoke-ShimSafely {
     #>
     param(
         [Parameter(Mandatory)][string]$ShimName,
-        [int]$TimeoutSeconds = 5
+        [int]$TimeoutSeconds = 10
     )
 
-    # Try --version first
+    # Try --version first, then --help
     $attempts = @("--version", "--help")
 
     foreach ($arg in $attempts) {
@@ -211,15 +211,31 @@ function Invoke-ShimSafely {
             if ($completed) {
                 $output = Receive-Job -Job $job
                 $exitCode = $output[-1]  # Last item is exit code
+                $outputText = ($output | Select-Object -SkipLast 1) -join "`n"
                 Remove-Job -Job $job -Force
 
-                # Any zero exit code = success
+                # Zero exit code = clear success
                 if ($exitCode -eq 0) {
                     return @{
                         success = $true
                         exitCode = $exitCode
                         arg = $arg
-                        output = ($output | Select-Object -SkipLast 1) -join "`n"
+                        output = $outputText
+                        error = $null
+                        timedOut = $false
+                    }
+                }
+
+                # Non-zero but produced output = shim launched the binary (it just doesn't
+                # support these flags). Treat as pass unless it looks like a PowerShell
+                # alias intercept ("not recognized as the name of a cmdlet").
+                if ($outputText -and $outputText.Trim() -and
+                    $outputText -notmatch 'is not recognized as (the name of a cmdlet|a name of a cmdlet)') {
+                    return @{
+                        success = $true
+                        exitCode = $exitCode
+                        arg = $arg
+                        output = $outputText
                         error = $null
                         timedOut = $false
                     }
@@ -263,7 +279,7 @@ function Invoke-Tier2Validation {
     #>
     param(
         [Parameter(Mandatory)][object]$ShimEntry,
-        [int]$TimeoutSeconds = 5
+        [int]$TimeoutSeconds = 10
     )
 
     $results = @{
@@ -431,7 +447,7 @@ function Invoke-ShimValidation {
         [Parameter(Mandatory)][string]$ShimsDir,
         [string]$RepoPath,
         [int[]]$Tiers = @(1, 2),
-        [int]$TimeoutSeconds = 5
+        [int]$TimeoutSeconds = 10
     )
 
     $results = @{
@@ -473,7 +489,7 @@ function Invoke-RepoValidation {
         [Parameter(Mandatory)][object]$RepoEntry,
         [Parameter(Mandatory)][object]$Config,
         [int[]]$Tiers = @(1, 2),
-        [int]$TimeoutSeconds = 5,
+        [int]$TimeoutSeconds = 10,
         [switch]$Quiet
     )
 

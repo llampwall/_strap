@@ -285,7 +285,7 @@ function Invoke-Clone {
     Write-Host "Validating shims..." -ForegroundColor Cyan
     Verbose-Log "Running Tier 1+2 validation on $($autoShims.Count) shim(s)..."
 
-    $validationSummary = Invoke-RepoValidation -RepoEntry $entry -Config $config -Tiers @(1, 2) -TimeoutSeconds 5 -Quiet:$false
+    $validationSummary = Invoke-RepoValidation -RepoEntry $entry -Config $config -Tiers @(1, 2) -TimeoutSeconds 10 -Quiet:$false
 
     if ($validationSummary.failedCount -gt 0) {
       Write-Host ""
