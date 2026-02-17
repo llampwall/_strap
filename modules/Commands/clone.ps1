@@ -255,7 +255,7 @@ function Invoke-Clone {
 
   # Auto-discover and create shims
   Verbose-Log "Running auto-discovery for shims..."
-  $autoShims = Invoke-ShimAutoDiscover -RepoEntry $entry -Config $config -Registry $newRegistry
+  $autoShims = @(Invoke-ShimAutoDiscover -RepoEntry $entry -Config $config -Registry $newRegistry)
   Verbose-Log "Auto-discovery found $($autoShims.Count) shim(s)"
   if ($autoShims.Count -gt 0) {
     foreach ($shim in $autoShims) {
