@@ -553,8 +553,6 @@ function Invoke-ShimAutoDiscover {
         return @()
     }
 
-    Write-Host "  Auto-discovered $($discovered.Count) shim(s) for $stack stack" -ForegroundColor Cyan
-
     $createdShims = @()
     foreach ($spec in $discovered) {
         try {
@@ -580,6 +578,8 @@ function Invoke-ShimAutoDiscover {
             Warn "Failed to create auto-discovered shim '$($spec.name)': $_"
         }
     }
+
+    Write-Host "  Auto-discovered $($createdShims.Count) shim(s) for $stack stack" -ForegroundColor Cyan
 
     return $createdShims
 }
