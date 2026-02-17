@@ -66,19 +66,45 @@ function Invoke-Chinvex {
         Array of arguments to pass to chinvex CLI.
     .PARAMETER StdIn
         Optional string to pipe to stdin (e.g., "y" for confirmation prompts).
+    .PARAMETER TimeoutSeconds
+        Optional timeout in seconds. If the command exceeds this, it is killed
+        and $false is returned. Default $null means no timeout.
     .OUTPUTS
         [bool] True if exit code 0, false otherwise.
     #>
     param(
         [Parameter(Mandatory)]
         [string[]] $Arguments,
-        [string] $StdIn = $null
+        [string] $StdIn = $null,
+        [int] $TimeoutSeconds = 0
     )
 
     if (-not (Test-ChinvexAvailable)) { return $false }
 
     try {
-        if ($StdIn) {
+        if ($TimeoutSeconds -gt 0) {
+            # Run with timeout via background job
+            $job = Start-Job -ScriptBlock {
+                param($args, $stdIn)
+                if ($stdIn) {
+                    $stdIn | & chinvex @args 2>&1 | Out-Null
+                } else {
+                    & chinvex @args 2>&1 | Out-Null
+                }
+                return $LASTEXITCODE
+            } -ArgumentList $Arguments, $StdIn
+
+            $completed = Wait-Job -Job $job -Timeout $TimeoutSeconds
+            if ($completed) {
+                $exitCode = Receive-Job -Job $job
+                Remove-Job -Job $job -Force
+                return ($exitCode -eq 0)
+            } else {
+                Stop-Job -Job $job
+                Remove-Job -Job $job -Force
+                return $false
+            }
+        } elseif ($StdIn) {
             $StdIn | & chinvex @Arguments 2>&1 | Out-Null
         } else {
             & chinvex @Arguments 2>&1 | Out-Null
@@ -206,9 +232,13 @@ function Sync-ChinvexForEntry {
         $baseArgs += "--rebuild-index"
     }
 
-    $ingested = Invoke-Chinvex -Arguments $baseArgs
+    # Ingest with a 120s timeout - large repos can take a long time to index
+    # and we don't want clone to block indefinitely. If it times out, the
+    # context exists but is unindexed; user can re-sync manually.
+    $ingested = Invoke-Chinvex -Arguments $baseArgs -TimeoutSeconds 120
     if (-not $ingested) {
-        Warn "Failed to ingest repo in chinvex context '$contextName'"
+        Warn "Chinvex ingest timed out or failed for '$contextName' (continuing without index)"
+        Warn "Re-run: chinvex ingest --context $contextName --repo $RepoPath --chinvex-depth $ChinvexDepth --status $Status"
         return $null
     }
 
