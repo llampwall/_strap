@@ -83,6 +83,10 @@ function Invoke-Setup {
       $detectedStacks += "python"
       Verbose-Log "Found requirements.txt - Python stack detected"
     }
+    elseif (Test-Path "setup.py") {
+      $detectedStacks += "python"
+      Verbose-Log "Found setup.py - Python stack detected"
+    }
 
     if (Test-Path "package.json") {
       $detectedStacks += "node"
@@ -284,7 +288,7 @@ function Invoke-Setup {
         }
 
         # Step 3: Install dependencies
-        if (Test-Path "pyproject.toml") {
+        if ((Test-Path "pyproject.toml") -or (Test-Path "setup.py")) {
           if ($useUvFlag) {
             $plan += @{
               Description = "Install dependencies via uv sync"

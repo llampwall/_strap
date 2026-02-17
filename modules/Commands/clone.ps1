@@ -100,6 +100,10 @@ function Invoke-Clone {
       $stackDetected = "python"
       Verbose-Log "Found requirements.txt - Python stack"
     }
+    elseif (Test-Path "setup.py") {
+      $stackDetected = "python"
+      Verbose-Log "Found setup.py - Python stack"
+    }
     elseif (Test-Path "package.json") {
       $stackDetected = "node"
       Verbose-Log "Found package.json - Node stack"
