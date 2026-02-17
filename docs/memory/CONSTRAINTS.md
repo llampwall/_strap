@@ -46,7 +46,7 @@
 ## Key Facts
 - Shim types: simple (direct exec), venv (Python), node (Node.js PATH setup)
 - Venv auto-discovery order: .venv, venv, .virtualenv
-- Python entry point sources: pyproject.toml [project.scripts], [tool.poetry.scripts], setup.py console_scripts
+- Python entry point sources: pyproject.toml [project.scripts], [tool.poetry.scripts], setup.cfg [options.entry_points] console_scripts, setup.py console_scripts (updated 2026-02-17)
 - Node entry point source: package.json bin field
 - Setup status values: succeeded, failed, skipped, null
 - Metadata presets: --tool (light/stable/third-party), --software (full/active/[])
@@ -57,7 +57,10 @@
 - fnm shim location: `P:\software\bin\fnm.{ps1,cmd}` (created by strap doctor --install-fnm) (added 2026-02-12)
 - Doctor check IDs: SHIM001-009, SYS001-004, NODE001-004, PY001-004 (updated 2026-02-12)
 - Setup command environment: fnm Node directory prepended to PATH for all operations (npm/pnpm/yarn/corepack) (added 2026-02-14)
-- Validation tiers: Tier 1 (filesystem, <100ms), Tier 2 (invocation, 5s timeout), Tier 3 (deep diagnostics, manual only) (added 2026-02-16)
+- Validation tiers: Tier 1 (filesystem, <100ms), Tier 2 (invocation, 10s timeout), Tier 3 (deep diagnostics, manual only) (updated 2026-02-17)
+- Validation Tier 2 pass condition: exit 0 OR produced any output (non-zero exit still passes if binary launched); PowerShell "not recognized" errors fail (added 2026-02-17)
+- Multi-stack detection priority: python > node > rust > go; first match wins, warning shown, --stack overrides (added 2026-02-17)
+- Chinvex ingest runs as detached background process (Start-Process); context name stored in registry immediately so uninstall can purge it (added 2026-02-17)
 - Verbose logging flags: --verbose / -v (available on clone, setup, verify commands) (added 2026-02-16)
 
 ## Hazards
@@ -72,6 +75,8 @@
 - Global nvm installation can cause permission errors if corepack runs in wrong environment; always use fnm-managed Node for corepack (added 2026-02-14)
 - PowerShell -Verbose is a common parameter that conflicts with custom function parameters named Verbose (added 2026-02-16)
 - Regex character class brackets (e.g., `[[]`) require escaping in PowerShell regex patterns (added 2026-02-16)
+- Windows symlink creation requires Developer Mode or admin rights; preconstruct/pnpm workspaces will EPERM without it (added 2026-02-17)
+- Single-element array returned from function is unwrapped by PowerShell; always wrap call sites with `@()` when indexing result (added 2026-02-17)
 
 ## Superseded
 (None yet)

@@ -4,7 +4,7 @@
 # State
 
 ## Current Objective
-Stable operations - all major features implemented and working
+Stable operations - gauntlet Round 2 complete, all strap bugs resolved
 
 ## Active Work
 None (maintenance mode)
@@ -13,10 +13,9 @@ None (maintenance mode)
 None
 
 ## Next Actions
-- Monitor validation system performance in production
-- Monitor verbose logging usage patterns
-- Monitor upgrade commands in production use
-- Use configure command to optimize chinvex syncing (metadata vs full reingest)
+- Monitor async chinvex ingest completion in production
+- Consider `strap doctor --symlinks` check for Windows Developer Mode
+- Monitor validation false-negative rate with new output-based pass logic
 
 ## Quick Reference
 - Install: Add `P:\software\_strap` to PATH, then `strap doctor`
@@ -30,7 +29,7 @@ None
 Consolidate/audit/archive commands (disabled since 2026-02-02 incident)
 
 ---
-Last memory update: 2026-02-16
-Commits covered through: 4f55bb6ec48a66e5fa942278798b64b9c030edd7
+Last memory update: 2026-02-17
+Commits covered through: 04eed3a9089fcacca1c508618f5030f00d78c6d3
 
-<!-- chinvex:last-commit:4f55bb6ec48a66e5fa942278798b64b9c030edd7 -->
+<!-- chinvex:last-commit:04eed3a9089fcacca1c508618f5030f00d78c6d3 -->

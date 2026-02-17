@@ -4,20 +4,44 @@
 # Decisions
 
 ## Recent (last 30 days)
-- Fixed PowerShell -Verbose parameter conflict by renaming to VerboseOutput with -v alias (d4fe750)
-- Fixed regex syntax error with character class bracket escaping (d4fe750)
-- Implemented comprehensive 3-tier validation system with performance targets (b4fc989)
-- Added verbose logging to clone/setup commands for detailed diagnostics (b4fc989)
-- Created test gauntlet framework for systematic validation testing (b4fc989)
-- Documented fnm integration, corepack fixes, and upgrade commands in README (f05650b)
-- Fixed corepack permission errors with smart detection and fnm environment isolation (424de1f)
-- Added upgrade-node and upgrade-python commands for easy version management (55ab13e, 11a0a10)
-- Implemented --all flag for batch upgrades of all projects of a type (c1858a6)
-- Added doctor health checks (NODE004, PY004) with version outdated warnings (11189fe)
+- Ran 17-repo test gauntlet (Round 1 + Round 2); fixed all discovered strap bugs (b4434bc..04eed3a)
+- Fixed uninstall IsPathRooted crash: shim entries are objects not strings (b4434bc)
+- Fixed corepack EPERM: fallback to any installed fnm Node when no version pinned (b589bda)
+- Fixed setup.py not detected as Python stack marker (6627369)
+- Fixed chinvex ingest blocking clone: now runs as detached background process (335c098)
+- Fixed multi-stack repos erroring: auto-selects primary by priority python>node>rust>go (7027dce)
+- Fixed setup.cfg entry_points not parsed for Python shim discovery (fd33141)
+- Fixed validation false negatives: pass if output produced regardless of exit code; timeout 5s→10s (edaad3a)
+- Fixed single-element array unwrap causing "Try: --help" to print empty shim name (04eed3a)
+- Added symlink EPERM hint pointing to Windows Developer Mode (d6498fd)
 
 ## 2026-02
 
-### 2026-02-16 — Fixed PowerShell -Verbose parameter conflict
+### 2026-02-17 — Chinvex ingest made fully async
+
+- **Why:** Large repos (eslint, changesets, biome) caused `strap clone` to block for 2+ minutes or hang indefinitely waiting for chinvex ingest
+- **Impact:** Ingest now runs as `Start-Process` detached background job; context name stored in registry immediately after `context create` so uninstall can purge it; clone is fast regardless of repo size
+- **Evidence:** 335c098
+
+### 2026-02-17 — Multi-stack auto-selection instead of error
+
+- **Why:** Repos like biome (Rust+Node) and ruff (Python+Rust) caused setup to error with "Multiple stacks detected"
+- **Impact:** Both clone.ps1 and Setup.ps1 now use priority order (python > node > rust > go) to pick primary stack; warning shown with --stack override hint; consistent detection logic across both commands
+- **Evidence:** 7027dce
+
+### 2026-02-17 — Fixed setup.cfg entry_points shim discovery
+
+- **Why:** httpie/cli and similar projects define CLI scripts in setup.cfg `[options.entry_points]` console_scripts, not pyproject.toml; no shims were created for them
+- **Impact:** `Discover-PythonShims` now parses setup.cfg entry_points as a fallback; httpie/cli gets http, https, httpie shims auto-created
+- **Evidence:** fd33141
+
+### 2026-02-17 — Validation Tier 2 pass on output not just exit code
+
+- **Why:** Tools like httpx exit non-zero on --version/--help (require URL arg) but the shim works; false negatives caused confusing validation failures
+- **Impact:** Any tool that launches and produces output now passes Tier 2; PowerShell "not recognized" errors (alias conflicts) still fail; timeout increased 5s→10s for slow Node startup (eslint)
+- **Evidence:** edaad3a
+
+### 2026-02-17 — Fixed PowerShell -Verbose parameter conflict
 
 - **Symptom:** Parameter binding error "A parameter cannot be found that matches parameter name 'Verbose'" when using --verbose flag
 - **Root cause:** PowerShell has built-in common parameter -Verbose that conflicts with custom function parameters of the same name; cannot override common parameters
