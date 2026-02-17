@@ -339,15 +339,27 @@ function Invoke-Setup {
 
         # Step 1: Enable corepack (if needed)
         if ($needsCorepack) {
-          # Use fnm-managed Node if available, otherwise fall back to global
-          # Corepack is bundled with Node, so we use the same directory
+          # If no specific Node version was detected, find any installed fnm Node.
+          # Without this, corepack runs in the global PATH (nvm's Node) and fails
+          # with EPERM trying to write shims into the nvm directory.
+          if (-not $fnmNodePath -and (Test-FnmInstalled)) {
+            $installedVersions = Get-FnmVersions
+            if ($installedVersions -and $installedVersions.Count -gt 0) {
+              $fallbackVersion = @($installedVersions | Sort-Object { [version]$_ })[-1]
+              $fnmNodePath = Get-FnmNodePath -Version $fallbackVersion
+              if ($fnmNodePath) {
+                Verbose-Log "No Node version required; using fnm $fallbackVersion for corepack environment"
+              }
+            }
+          }
+
+          # Use fnm-managed Node's corepack if available
           if ($fnmNodePath) {
             $nodeDir = Split-Path $fnmNodePath -Parent
             $corepackPath = Join-Path $nodeDir "corepack.cmd"
             if (Test-Path $corepackPath) {
               $corepackCmd = "& '$corepackPath' enable"
             } else {
-              # Fallback to global corepack (should not happen with modern Node)
               Warn "corepack.cmd not found in fnm Node directory, using global"
               $corepackCmd = "corepack enable"
             }
