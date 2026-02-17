@@ -17,6 +17,7 @@
 - Python versions directory: `P:\software\_python-tools\pyenv-win\pyenv-win\versions` (managed by pyenv-win)
 - fnm vendored location: `P:\software\_node-tools\fnm` (added 2026-02-12)
 - Node versions directory: managed by fnm (added 2026-02-12)
+- Test gauntlet framework: `docs/TEST_GAUNTLET.md` (systematic testing guide) (added 2026-02-16)
 
 ## Rules
 - Never run consolidate/audit/snapshot/migrate/archive commands (kill-switched since 2026-02-02)
@@ -39,6 +40,8 @@
 - Node installations handled by fnm during setup if version missing (added 2026-02-12)
 - Corepack only enabled when package.json has packageManager field or --enable-corepack explicitly passed (updated 2026-02-14)
 - Corepack commands use fnm-managed Node to prevent permission errors with nvm installations (updated 2026-02-14)
+- Validation runs automatically after clone (Tier 1+2) unless --skip-validation passed (added 2026-02-16)
+- PowerShell -Verbose common parameter requires custom parameters use different names (e.g., VerboseOutput) (added 2026-02-16)
 
 ## Key Facts
 - Shim types: simple (direct exec), venv (Python), node (Node.js PATH setup)
@@ -54,6 +57,8 @@
 - fnm shim location: `P:\software\bin\fnm.{ps1,cmd}` (created by strap doctor --install-fnm) (added 2026-02-12)
 - Doctor check IDs: SHIM001-009, SYS001-004, NODE001-004, PY001-004 (updated 2026-02-12)
 - Setup command environment: fnm Node directory prepended to PATH for all operations (npm/pnpm/yarn/corepack) (added 2026-02-14)
+- Validation tiers: Tier 1 (filesystem, <100ms), Tier 2 (invocation, 5s timeout), Tier 3 (deep diagnostics, manual only) (added 2026-02-16)
+- Verbose logging flags: --verbose / -v (available on clone, setup, verify commands) (added 2026-02-16)
 
 ## Hazards
 - PowerShell unwraps single-element arrays (use comma operator: `,$array`)
@@ -65,6 +70,8 @@
 - Chinvex context purge requires stdin confirmation ("y") - use `Invoke-Chinvex -StdIn "y"`
 - PowerShell parameter binding can misinterpret pipeline values as parameters; wrap loops in script blocks (`& { }`) when accessing properties (added 2026-02-12)
 - Global nvm installation can cause permission errors if corepack runs in wrong environment; always use fnm-managed Node for corepack (added 2026-02-14)
+- PowerShell -Verbose is a common parameter that conflicts with custom function parameters named Verbose (added 2026-02-16)
+- Regex character class brackets (e.g., `[[]`) require escaping in PowerShell regex patterns (added 2026-02-16)
 
 ## Superseded
 (None yet)

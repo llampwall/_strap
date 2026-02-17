@@ -13,16 +13,17 @@ None (maintenance mode)
 None
 
 ## Next Actions
+- Monitor validation system performance in production
+- Monitor verbose logging usage patterns
 - Monitor upgrade commands in production use
-- Monitor setup health via HEALTH column in `strap list`
-- Monitor pyenv-win integration across different Python projects
 - Use configure command to optimize chinvex syncing (metadata vs full reingest)
 
 ## Quick Reference
 - Install: Add `P:\software\_strap` to PATH, then `strap doctor`
 - Test: `Invoke-Pester tests/powershell/ -Output Detailed`
+- Validate: `strap verify <name>` (Tier 1+2) or `strap verify <name> --deep` (all tiers)
+- Verbose: `strap clone <url> --verbose` or `strap setup --repo <name> --verbose`
 - Upgrade: `strap upgrade-node <name> --latest` or `strap upgrade-python <name> --latest`
-- Batch upgrade: `strap upgrade-node --all --latest`
 - Entry point: `strap.ps1` (invoked via `strap.cmd`)
 
 ## Out of Scope (for now)
@@ -30,6 +31,6 @@ Consolidate/audit/archive commands (disabled since 2026-02-02 incident)
 
 ---
 Last memory update: 2026-02-16
-Commits covered through: d73e462ffc1c93c5ea0ff2d8004da9e3089e8b6a
+Commits covered through: d4fe750e08760ef238bc273bdd64d19ab22b5da8
 
-<!-- chinvex:last-commit:d73e462ffc1c93c5ea0ff2d8004da9e3089e8b6a -->
+<!-- chinvex:last-commit:d4fe750e08760ef238bc273bdd64d19ab22b5da8 -->

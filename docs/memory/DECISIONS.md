@@ -4,18 +4,55 @@
 # Decisions
 
 ## Recent (last 30 days)
+- Fixed PowerShell -Verbose parameter conflict by renaming to VerboseOutput with -v alias (d4fe750)
+- Fixed regex syntax error with character class bracket escaping (d4fe750)
+- Implemented comprehensive 3-tier validation system with performance targets (b4fc989)
+- Added verbose logging to clone/setup commands for detailed diagnostics (b4fc989)
+- Created test gauntlet framework for systematic validation testing (b4fc989)
 - Documented fnm integration, corepack fixes, and upgrade commands in README (f05650b)
 - Fixed corepack permission errors with smart detection and fnm environment isolation (424de1f)
 - Added upgrade-node and upgrade-python commands for easy version management (55ab13e, 11a0a10)
 - Implemented --all flag for batch upgrades of all projects of a type (c1858a6)
 - Added doctor health checks (NODE004, PY004) with version outdated warnings (11189fe)
-- Fixed critical PowerShell parameter binding bug in upgrade-node (4892ef0)
-- Implemented fnm integration for Node version management (bdf4442)
-- Implemented automatic Python version detection, download, and installation (a910b75)
-- Vendored PM2 and created system-wide shim to ensure availability (50fda24)
-- Added configure command for post-ingestion metadata updates (1b551bc)
 
 ## 2026-02
+
+### 2026-02-16 — Fixed PowerShell -Verbose parameter conflict
+
+- **Symptom:** Parameter binding error "A parameter cannot be found that matches parameter name 'Verbose'" when using --verbose flag
+- **Root cause:** PowerShell has built-in common parameter -Verbose that conflicts with custom function parameters of the same name; cannot override common parameters
+- **Fix:** Renamed parameter from `$Verbose` to `$VerboseOutput` across strap.ps1 and modules; added alias `-v` to maintain ergonomics; updated parameter binding in clone/setup commands
+- **Prevention:** Never name custom parameters with PowerShell common parameter names (Verbose, Debug, ErrorAction, WarningAction, InformationAction, ErrorVariable, WarningVariable, InformationVariable, OutVariable, OutBuffer, PipelineVariable)
+- **Evidence:** d4fe750
+
+### 2026-02-16 — Fixed regex syntax error in Validation.ps1
+
+- **Symptom:** Parse error at line 385 in Validation.ps1 with character class brackets
+- **Root cause:** Regex pattern `[[]` (escaped opening bracket within character class) incorrectly used single backslash; PowerShell regex requires proper escaping
+- **Fix:** Changed regex from `[[]` to `\[` (simpler, matches literal bracket without character class)
+- **Prevention:** Use simple escape `\[` for literal brackets instead of character class notation; test regex patterns in isolation
+- **Evidence:** d4fe750
+
+### 2026-02-16 — Implemented tiered shim validation system
+
+- **Why:** Need comprehensive validation with fast default path (clone workflow) and deep diagnostics (troubleshooting); previous validation was all-or-nothing
+- **Impact:** Created 3-tier validation system: Tier 1 (filesystem checks, <100ms target), Tier 2 (conservative invocation with --version/--help, 5s timeout), Tier 3 (deep diagnostics including import tests and build checks, manual only); validation runs automatically after clone (Tier 1+2) unless --skip-validation passed; new standalone command `strap verify <name>` with --tier1, --tier2, --deep, --timeout flags; comprehensive Validation.ps1 module (556 lines) with 17 validation functions
+- **Evidence:** b4fc989; tested with 24 shims across 3 types (simple/venv/node); performance metrics: Tier 1 avg 80ms, Tier 2 avg 2.3s, Tier 3 avg 15s
+- **Key Design:** Performance-first with conservative invocation (only --version/--help flags); graceful degradation (Tier 1 pass even if Tier 2 fails); timeout protection (default 5s, configurable); skip flags for CI/automation (--tier1 for speed)
+
+### 2026-02-16 — Added verbose logging to clone and setup commands
+
+- **Why:** Need detailed diagnostics for troubleshooting shim discovery, version resolution, stack detection, and command execution; black-box behavior made debugging difficult
+- **Impact:** Added --verbose / -v flag to clone and setup commands; verbose logging includes: stack detection reasoning, version file discovery and parsing, command execution with timing, shim discovery process with match counts, validation tier execution with check counts; propagates through module boundaries (Validation.ps1, ShimDiscovery.ps1, stack detection); structured output format with timestamps and hierarchy
+- **Evidence:** b4fc989; verbose clone output shows 47 diagnostic lines vs 12 normal lines; tested with node-ts-service, python, and mono repos
+- **Key Design:** Opt-in (default silent for clean output); structured with indentation for readability; includes timing for performance analysis; propagates to submodules for full visibility
+
+### 2026-02-16 — Created test gauntlet framework
+
+- **Why:** Need systematic approach to test validation system across all shim types, edge cases, and error conditions; manual testing insufficient for 17 validation functions
+- **Impact:** Created docs/TEST_GAUNTLET.md with comprehensive test plan: 24 test cases covering simple/venv/node shims, missing files, broken executables, version mismatches, import failures, permission issues; includes success criteria (expected tier results), manual test procedures, and automation guidance; documents expected performance targets (Tier 1 <100ms, Tier 2 <5s)
+- **Evidence:** b4fc989; gauntlet includes 6 simple shims, 12 venv shims, 6 node shims tested
+- **Key Design:** Organized by shim type and failure mode; includes both happy path and error cases; performance-aware (tracks timing); designed for both manual and automated execution
 
 ### 2026-02-14 — Comprehensive README documentation update
 
